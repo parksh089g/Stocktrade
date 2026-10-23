@@ -23,10 +23,10 @@ def test_cli_runs_with_fake_broker(market, capsys):
     assert "주문 1건" in out
 
 
-def test_cli_refuses_kis_until_m5(monkeypatch, capsys):
+def test_cli_needs_kis_settings(monkeypatch, capsys):
     monkeypatch.setenv("BROKER", "kis")
     assert main(["--market", "KR"]) == 2
-    assert "M5" in capsys.readouterr().out
+    assert "KIS_APP_KEY" in capsys.readouterr().out
 
 
 def test_ignore_hours_only_with_fake(monkeypatch, capsys):

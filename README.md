@@ -39,3 +39,10 @@ uv run python -m trading.engine --market US --ignore-hours --seed 11   # 장 시
 - 알림: 웹앱 푸시. 키 만들기 `uv run python -m trading.notify.vapid`. 알림을 한 기기에도 못 보내면 실행이 실패로 끝나
   GitHub Actions 실패 메일이 백업 알림이 된다.
 - fake 증권사로 실행할 때는 가짜 주문이 실제 기록에 섞이지 않도록 메모리 저장소와 화면 출력만 쓴다.
+
+## 증권사(KIS) 연결
+
+- 준비: [docs/SETUP.md](docs/SETUP.md)의 "KIS 모의투자 키"
+- 연결 확인(조회만): `uv run python -m trading.brokers.kis_check`
+- 시험 실행(주문 없이 계산만): `BROKER=kis uv run python -m trading.engine --market KR --dry-run`
+- 미국 주식은 KIS 일반 주문이 정규장에만 되므로 장 시작 뒤(뉴욕 09:30~)에 실행한다.

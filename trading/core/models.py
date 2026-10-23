@@ -39,6 +39,15 @@ class Market(StrEnum):
         return "국내" if self is Market.KR else "미국"
 
     @property
+    def order_start_time(self) -> time:
+        """정규장 주문을 낼 수 있는 시각(현지).
+
+        국내는 08:30부터 장 시작 동시호가 주문을 받는다. 미국은 KIS 일반 주문이 정규장(09:30~)에만
+        되므로(그 전에는 예약주문 API가 따로 있다) 장이 열린 뒤에 주문한다.
+        """
+        return time(8, 30) if self is Market.KR else time(9, 30)
+
+    @property
     def close_time(self) -> time:
         """정규장 마감 시각(현지)."""
         return time(15, 30) if self is Market.KR else time(16, 0)

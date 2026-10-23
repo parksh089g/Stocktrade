@@ -86,6 +86,7 @@ class Engine:
         daily_buy_caps: Mapping[Market, Decimal | None] | None = None,
         secrets: Iterable[str] = (),
         check_market_hours: bool = True,
+        dry_run: bool = False,
         clock: Callable[[], datetime] = now_utc,
     ) -> None:
         if not strategies:
@@ -100,10 +101,13 @@ class Engine:
         self.daily_buy_caps = dict(daily_buy_caps or {})
         self.secrets = list(secrets)
         self.check_market_hours = check_market_hours
+        self.dry_run = dry_run
         self.clock = clock
 
     def run(self, market: Market) -> RunReport:
-        report = RunReport(market=market, mode=self.mode, started_at=self.clock())
+        report = RunReport(
+            market=market, mode=self.mode, started_at=self.clock(), dry_run=self.dry_run
+        )
         try:
             self._run(market, report)
         except (OrderPlacementError, OrderRecordError) as e:
@@ -156,7 +160,14 @@ class Engine:
                 report.status = RunStatus.SKIPPED
                 report.message = f"휴장일입니다({today})"
                 return
-            if now.astimezone(market.timezone).time() >= market.close_time:
+            local_time = now.astimezone(market.timezone).time()
+            if local_time < market.order_start_time:
+                report.status = RunStatus.SKIPPED
+                report.message = (
+                    f"주문 가능 시간 전입니다(현지 {market.order_start_time:%H:%M}부터)"
+                )
+                return
+            if local_time >= market.close_time:
                 report.status = RunStatus.SKIPPED
                 report.message = "장 마감 후라 주문하지 않습니다"
                 return
@@ -255,6 +266,9 @@ class Engine:
         return symbols, bought
 
     def _place_orders(self, planned: list[PlannedOrder], report: RunReport) -> None:
+        if self.dry_run:
+            report.planned = [p.order for p in planned]
+            return
         for p in planned:
             pause = self.store.get_pause()
             if pause.paused and not p.signal.stop_loss:

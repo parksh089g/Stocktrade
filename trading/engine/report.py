@@ -47,6 +47,8 @@ class RunReport(BaseModel):
     orders: list[OrderResult] = Field(default_factory=list)
     skipped: list[SkippedSignal] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+    dry_run: bool = False  # 시험 실행: 계산만 하고 주문은 내지 않았다
+    planned: list[Order] = Field(default_factory=list)  # 시험 실행에서 냈을 주문
     notify_failed: bool = False  # 알림을 못 보냈으면 실행 자체를 실패로 표시해 GitHub이 알리게 한다
 
 
@@ -71,7 +73,8 @@ _ORDER_STATUS = {
 def report_title(report: RunReport) -> str:
     """알림 제목. 예: [모의투자] 국내 · 완료"""
     mode = _MODE.get(report.mode, report.mode)
-    return f"[{mode}] {report.market.label} · {_STATUS[report.status]}"
+    title = f"[{mode}] {report.market.label} · {_STATUS[report.status]}"
+    return f"{title} · 시험 실행" if report.dry_run else title
 
 
 def report_body(report: RunReport, names: Mapping[str, str] | None = None) -> str:
@@ -97,8 +100,8 @@ def report_body(report: RunReport, names: Mapping[str, str] | None = None) -> st
                 f" · {_SIDE[o.side]} {label(o.symbol)} {f.qty}주 @ {fmt(f.price)} [{o.strategy}]"
             )
 
+    reasons = {(s.symbol, s.strategy): s.reason for s in report.signals}
     if report.orders:
-        reasons = {(s.symbol, s.strategy): s.reason for s in report.signals}
         lines.append(f"주문 {len(report.orders)}건")
         for r in report.orders:
             o = r.order
@@ -107,6 +110,14 @@ def report_body(report: RunReport, names: Mapping[str, str] | None = None) -> st
             lines.append(
                 f" · {_SIDE[o.side]} {label(o.symbol)} {o.qty}주 {price} [{o.strategy}] → {status}"
             )
+            if reason := reasons.get((o.symbol, o.strategy)):
+                lines.append(f"   ({reason})")
+
+    if report.planned:
+        lines.append(f"주문 예정 {len(report.planned)}건 (시험 실행이라 내지 않음)")
+        for o in report.planned:
+            price = f"지정가 {fmt(o.limit_price)}" if o.limit_price else "시장가"
+            lines.append(f" · {_SIDE[o.side]} {label(o.symbol)} {o.qty}주 {price} [{o.strategy}]")
             if reason := reasons.get((o.symbol, o.strategy)):
                 lines.append(f"   ({reason})")
 
