@@ -183,3 +183,52 @@ def test_random_bars_are_valid_and_deterministic():
     assert (a["high"] >= a[["open", "close"]].max(axis=1)).all()
     assert (a["low"] <= a[["open", "close"]].min(axis=1)).all()
     assert (a["low"] > 0).all()
+
+
+def test_trading_days_skip_weekends_and_holidays(broker: FakeBroker):
+    broker.holidays.add(date(2026, 10, 26))
+    assert broker.is_trading_day(Market.KR, date(2026, 10, 23))  # 금
+    assert not broker.is_trading_day(Market.KR, date(2026, 10, 24))  # 토
+    assert not broker.is_trading_day(Market.KR, date(2026, 10, 26))  # 휴장일
+
+
+def test_partial_fill_and_remaining_reservation(broker: FakeBroker):
+    placed = broker.place_order(make_order(Market.US, "AAPL", qty=10, limit=D("170")))
+    assert broker.get_balance(Market.US).cash == D(10_000) - 10 * D(170)
+
+    broker.fill_order(placed.broker_order_id, qty=4, price="169")
+    [order] = broker.get_orders(Market.US, date(2026, 10, 22))
+    assert (order.status, order.filled_qty, order.avg_fill_price) == (
+        OrderStatus.PARTIALLY_FILLED,
+        4,
+        D(169),
+    )
+    # 남은 6주만큼만 예약
+    assert broker.get_balance(Market.US).cash == D(10_000) - 4 * D(169) - 6 * D(170)
+
+    broker.fill_order(placed.broker_order_id, price="171")
+    [order] = broker.get_orders(Market.US, date(2026, 10, 22))
+    assert order.status is OrderStatus.FILLED
+    assert order.avg_fill_price == (4 * D(169) + 6 * D(171)) / 10
+    assert broker.get_holdings(Market.US)[0].qty == 10
+
+
+def test_fill_order_rejects_closed_or_oversized(broker: FakeBroker):
+    placed = broker.place_order(make_order(Market.US, "AAPL", qty=2, limit=D("170")))
+    with pytest.raises(ValueError):
+        broker.fill_order(placed.broker_order_id, qty=3)
+    broker.fill_order(placed.broker_order_id)
+    with pytest.raises(ValueError):
+        broker.fill_order(placed.broker_order_id)
+
+
+def test_demo_broker_has_bars_for_universe():
+    from trading.brokers.fake import make_demo_broker
+    from trading.universe import load_universe
+
+    universe = load_universe("config/universe.toml")
+    b = make_demo_broker(universe, end=date(2026, 10, 23))
+    for market, instruments in universe.items():
+        for inst in instruments:
+            bars = b.get_daily_bars(market, inst.symbol, 100)
+            assert bars.index[-1].date() == date(2026, 10, 23)

@@ -36,3 +36,9 @@ def test_short_values_are_not_masked():
     logger, buf = _logger_with_buffer(["01"])
     logger.info("account suffix 01")
     assert buf.getvalue().strip() == "account suffix 01"
+
+
+def test_redact_helper():
+    from trading.core.log import redact
+
+    assert redact("key=abcd-1234 again abcd-1234", ["abcd-1234", "ab"]) == "key=*** again ***"

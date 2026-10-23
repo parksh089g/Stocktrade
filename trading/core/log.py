@@ -9,19 +9,22 @@ MASK = "***"
 _MIN_SECRET_LEN = 4
 
 
+def redact(text: str, secrets: Iterable[str]) -> str:
+    """text 안의 비밀값을 가린다. 알림이나 저장할 오류 문장에도 쓴다."""
+    # 긴 값부터 바꿔야 겹치는 비밀값이 일부만 남지 않는다
+    for secret in sorted({s for s in secrets if len(s) >= _MIN_SECRET_LEN}, key=len, reverse=True):
+        text = text.replace(secret, MASK)
+    return text
+
+
 class RedactingFormatter(logging.Formatter):
     def __init__(self, fmt: str, secrets: Iterable[str]) -> None:
         super().__init__(fmt)
-        # 긴 값부터 바꿔야 겹치는 비밀값이 일부만 남지 않는다
-        self._secrets = sorted(
-            {s for s in secrets if len(s) >= _MIN_SECRET_LEN}, key=len, reverse=True
-        )
+        self._secrets = list(secrets)
 
     def format(self, record: logging.LogRecord) -> str:
-        text = super().format(record)  # 예외 traceback까지 포함된 최종 문자열
-        for secret in self._secrets:
-            text = text.replace(secret, MASK)
-        return text
+        # 예외 traceback까지 포함된 최종 문자열에서 가린다
+        return redact(super().format(record), self._secrets)
 
 
 def setup_logging(secrets: Iterable[str] = (), level: int = logging.INFO) -> None:

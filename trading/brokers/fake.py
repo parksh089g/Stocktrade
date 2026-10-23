@@ -5,11 +5,14 @@ KIS와 같은 제약을 기본으로 흉내 낸다: 해외(US)는 지정가 주�
 - 시장가: 현재가에 바로 체결
 - 지정가: 현재가로 바로 체결할 수 있으면(매수 지정가 >= 현재가, 매도 지정가 <= 현재가)
   현재가에 체결, 아니면 접수 상태로 남는다. process_open_orders()로 다시 맞춰 본다.
+- 부분 체결은 테스트에서 fill_order()로 직접 만든다.
+- 주말과 holidays에 넣은 날은 휴장일이다.
 """
 
 from collections.abc import Callable, Iterable, Mapping
 from datetime import date, datetime
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
@@ -28,6 +31,9 @@ from trading.core.models import (
     validate_bars,
 )
 
+if TYPE_CHECKING:
+    from trading.universe import Universe
+
 Key = tuple[Market, str]
 
 
@@ -41,12 +47,14 @@ class FakeBroker(BrokerAdapter):
         market_order_markets: Iterable[Market] = (Market.KR,),
         fee_rate: Decimal = Decimal("0"),
         clock: Callable[[], datetime] = now_utc,
+        holidays: Iterable[date] = (),
     ) -> None:
         cash = cash or {}
         self._cash: dict[Market, Decimal] = {m: Decimal(str(cash.get(m, 0))) for m in Market}
         self._market_order_markets = frozenset(market_order_markets)
         self._fee_rate = fee_rate
         self._clock = clock
+        self.holidays: set[date] = set(holidays)
         self._bars: dict[Key, pd.DataFrame] = {}
         self._prices: dict[Key, Decimal] = {}
         self._holdings: dict[Key, tuple[int, Decimal]] = {}  # (수량, 평균단가)
@@ -72,14 +80,38 @@ class FakeBroker(BrokerAdapter):
         self._holdings[(market, symbol)] = (qty, Decimal(str(avg_price)))
 
     def process_open_orders(self) -> None:
-        """접수 상태인 지정가 주문을 현재가와 다시 맞춰 본다."""
+        """미체결 지정가 주문을 현재가와 다시 맞춰 본다."""
         for i, result in enumerate(self._orders):
-            if result.status is OrderStatus.SUBMITTED:
+            if result.status.is_open:
                 price = self._prices.get((result.order.market, result.order.symbol))
                 if price is not None and _is_marketable(result.order, price):
                     self._orders[i] = self._fill(result, price)
 
+    def fill_order(
+        self, broker_order_id: str, qty: int | None = None, price: Decimal | int | str | None = None
+    ) -> None:
+        """미체결 주문을 강제로 체결한다(qty를 주면 그만큼만 부분 체결). 테스트용."""
+        for i, result in enumerate(self._orders):
+            if result.broker_order_id == broker_order_id:
+                if not result.status.is_open:
+                    raise ValueError(f"{broker_order_id}는 미체결 주문이 아닙니다")
+                fill_price = (
+                    Decimal(str(price))
+                    if price is not None
+                    else (
+                        result.order.limit_price
+                        or self._prices[(result.order.market, result.order.symbol)]
+                    )
+                )
+                self._orders[i] = self._fill(result, fill_price, qty)
+                return
+        raise KeyError(broker_order_id)
+
     # ---- BrokerAdapter ----
+
+    def is_trading_day(self, market: Market, day: date) -> bool:
+        self._maybe_fail("is_trading_day")
+        return day.weekday() < 5 and day not in self.holidays
 
     def supported_order_types(self, market: Market) -> frozenset[OrderType]:
         if market in self._market_order_markets:
@@ -171,18 +203,19 @@ class FakeBroker(BrokerAdapter):
         self._orders.append(result)
         return result
 
-    def _open_orders(self, market: Market) -> Iterable[Order]:
+    def _open_orders(self, market: Market) -> Iterable[tuple[Order, int]]:
+        """(주문, 남은 수량)"""
         return (
-            r.order
+            (r.order, r.order.qty - r.filled_qty)
             for r in self._orders
-            if r.status is OrderStatus.SUBMITTED and r.order.market == market
+            if r.status.is_open and r.order.market == market
         )
 
     def _reserved_cash(self, market: Market) -> Decimal:
         return sum(
             (
-                o.qty * (o.limit_price or Decimal(0)) * (1 + self._fee_rate)
-                for o in self._open_orders(market)
+                left * (o.limit_price or Decimal(0)) * (1 + self._fee_rate)
+                for o, left in self._open_orders(market)
                 if o.side is Side.BUY
             ),
             Decimal(0),
@@ -190,32 +223,41 @@ class FakeBroker(BrokerAdapter):
 
     def _reserved_qty(self, market: Market, symbol: str) -> int:
         return sum(
-            o.qty for o in self._open_orders(market) if o.side is Side.SELL and o.symbol == symbol
+            left
+            for o, left in self._open_orders(market)
+            if o.side is Side.SELL and o.symbol == symbol
         )
 
-    def _fill(self, result: OrderResult, price: Decimal) -> OrderResult:
+    def _fill(self, result: OrderResult, price: Decimal, qty: int | None = None) -> OrderResult:
         order = result.order
+        fill_qty = qty if qty is not None else order.qty - result.filled_qty
+        if not 0 < fill_qty <= order.qty - result.filled_qty:
+            raise ValueError(f"체결 수량이 잘못됐습니다: {fill_qty}")
         key = (order.market, order.symbol)
-        amount = order.qty * price
+        amount = fill_qty * price
         fee = amount * self._fee_rate
-        qty, avg = self._holdings.get(key, (0, Decimal(0)))
+        held, avg = self._holdings.get(key, (0, Decimal(0)))
 
         if order.side is Side.BUY:
             self._cash[order.market] -= amount + fee
-            new_qty = qty + order.qty
-            self._holdings[key] = (new_qty, (qty * avg + amount) / new_qty)
+            new_held = held + fill_qty
+            self._holdings[key] = (new_held, (held * avg + amount) / new_held)
         else:
             self._cash[order.market] += amount - fee
-            if qty == order.qty:
+            if held == fill_qty:
                 del self._holdings[key]
             else:
-                self._holdings[key] = (qty - order.qty, avg)
+                self._holdings[key] = (held - fill_qty, avg)
 
+        filled = result.filled_qty + fill_qty
+        prev_amount = result.filled_qty * (result.avg_fill_price or Decimal(0))
         return result.model_copy(
             update={
-                "status": OrderStatus.FILLED,
-                "filled_qty": order.qty,
-                "avg_fill_price": price,
+                "status": OrderStatus.FILLED
+                if filled == order.qty
+                else OrderStatus.PARTIALLY_FILLED,
+                "filled_qty": filled,
+                "avg_fill_price": (prev_amount + amount) / filled,
             }
         )
 
@@ -238,14 +280,18 @@ def make_random_bars(
     *,
     start_price: float = 10_000,
     start: str = "2025-01-02",
+    end: str | None = None,
     drift: float = 0.0003,
     volatility: float = 0.02,
     decimals: int = 0,
     seed: int = 0,
 ) -> pd.DataFrame:
-    """로컬 실행/테스트용 가짜 일봉(기하 랜덤워크). seed가 같으면 결과도 같다."""
+    """로컬 실행/테스트용 가짜 일봉(기하 랜덤워크). seed가 같으면 결과도 같다.
+
+    end를 주면 그날로 끝나게, 아니면 start부터 n일.
+    """
     rng = np.random.default_rng(seed)
-    index = pd.bdate_range(start=start, periods=n)
+    index = pd.bdate_range(end=end, periods=n) if end else pd.bdate_range(start=start, periods=n)
     close = start_price * np.exp(np.cumsum(rng.normal(drift, volatility, n)))
     prev_close = np.concatenate([[start_price], close[:-1]])
     open_ = prev_close * (1 + rng.normal(0, volatility / 4, n))
@@ -262,3 +308,22 @@ def make_random_bars(
         },
         index=index,
     )
+
+
+def make_demo_broker(
+    universe: "Universe", *, end: date, seed: int = 0, clock: Callable[[], datetime] = now_utc
+) -> FakeBroker:
+    """로컬 실행용: 목록의 종목마다 end까지의 가짜 일봉과 현금을 넣은 fake 증권사."""
+    broker = FakeBroker(cash={Market.KR: 10_000_000, Market.US: 10_000}, clock=clock)
+    for market, instruments in universe.items():
+        start_price, decimals = (50_000, 0) if market is Market.KR else (150, 2)
+        for i, inst in enumerate(instruments):
+            bars = make_random_bars(
+                200,
+                start_price=start_price,
+                end=end.isoformat(),
+                decimals=decimals,
+                seed=seed * 1000 + i,
+            )
+            broker.set_bars(market, inst.symbol, bars)
+    return broker

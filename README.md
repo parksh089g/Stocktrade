@@ -20,3 +20,14 @@ uv run python -m trading.backtest --csv 005930.csv --market KR --strategy trend_
 
 CSV는 `date,open,high,low,close,volume` 컬럼이 있으면 된다. 신호는 다음 날 시가에 체결하고,
 수수료/세금은 `trading/backtest/simulator.py`의 `DEFAULT_COSTS`(대략값)를 쓴다.
+
+## 하루 실행 (지금은 fake 증권사)
+
+```bash
+uv run python -m trading.engine --market KR
+uv run python -m trading.engine --market US --ignore-hours --seed 11   # 장 시간과 상관없이 흐름 확인
+```
+
+흐름: 스위치 확인 → 지난 주문 체결 반영 → (일시정지/휴장/장 마감이면 끝) → 계좌 조회 → 시세와 신호
+→ 리스크(배분/한도/중복) → 지정가 주문 → 기록 → 알림. 종목은 `config/universe.toml`, 리스크 값은
+`trading/risk/config.py`, 하루 매수 상한은 `.env`의 `MAX_DAILY_BUY_KRW`/`MAX_DAILY_BUY_USD`.

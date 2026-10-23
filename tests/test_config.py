@@ -50,3 +50,19 @@ def test_secrets_hidden_in_repr_and_listed_for_redaction():
     assert "abcd-secret" not in repr(s)
     assert "tg-token-999" not in str(s)
     assert set(s.secret_values()) == {"abcd-secret", "tg-token-999"}
+
+
+def test_empty_env_values_are_ignored(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("KIS_APP_KEY", "")
+    monkeypatch.setenv("MAX_DAILY_BUY_KRW", "")
+    s = make()
+    assert s.kis_app_key is None
+    assert s.max_daily_buy_krw is None
+
+
+def test_daily_buy_caps(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("MAX_DAILY_BUY_KRW", "1000000")
+    assert make().max_daily_buy_krw == 1_000_000
+    monkeypatch.setenv("MAX_DAILY_BUY_KRW", "-5")
+    with pytest.raises(ValidationError):
+        make()

@@ -4,6 +4,7 @@
 실전 키는 이 PC에 두지 않으므로 GitHub Actions 안에서만 허용한다.
 """
 
+from decimal import Decimal
 from typing import Literal
 
 from pydantic import Field, SecretStr, model_validator
@@ -14,7 +15,9 @@ BrokerName = Literal["fake", "kis"]
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore", env_ignore_empty=True
+    )
 
     trading_mode: TradingMode = "paper"
     broker: BrokerName = "fake"
@@ -28,6 +31,11 @@ class Settings(BaseSettings):
 
     telegram_bot_token: SecretStr | None = None
     telegram_chat_id: str | None = None
+
+    universe_path: str = "config/universe.toml"
+    # 하루 매수 금액 상한(시장별). 비우면 상한 없음. 실전 전환 초기에 작게 둔다.
+    max_daily_buy_krw: Decimal | None = Field(default=None, gt=0)
+    max_daily_buy_usd: Decimal | None = Field(default=None, gt=0)
 
     # GitHub Actions가 자동으로 GITHUB_ACTIONS=true를 넣어 준다
     github_actions: bool = Field(default=False)

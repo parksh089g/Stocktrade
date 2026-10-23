@@ -21,6 +21,10 @@ class BrokerAdapter(ABC):
     name: str
 
     @abstractmethod
+    def is_trading_day(self, market: Market, day: date) -> bool:
+        """그 시장 현지 날짜 기준 개장일인지(주말/공휴일이면 False)."""
+
+    @abstractmethod
     def supported_order_types(self, market: Market) -> frozenset[OrderType]:
         """그 시장에서 쓸 수 있는 주문 방식."""
 

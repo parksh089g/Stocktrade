@@ -3,7 +3,7 @@
 금액과 가격은 Decimal, 수량은 정수 주식 수, 시간은 UTC로 둔다.
 """
 
-from datetime import date, datetime
+from datetime import date, datetime, time
 from decimal import Decimal
 from enum import StrEnum
 from typing import Annotated
@@ -34,6 +34,15 @@ class Market(StrEnum):
     def timezone(self) -> ZoneInfo:
         return KST if self is Market.KR else NEW_YORK
 
+    @property
+    def label(self) -> str:
+        return "국내" if self is Market.KR else "미국"
+
+    @property
+    def close_time(self) -> time:
+        """정규장 마감 시각(현지)."""
+        return time(15, 30) if self is Market.KR else time(16, 0)
+
     def format_price(self, value: Decimal | float) -> str:
         """알림/로그용 가격 표기. 예: KR 70,000 / US 180.50"""
         return f"{value:,.0f}" if self is Market.KR else f"{value:,.2f}"
@@ -55,10 +64,25 @@ class OrderStatus(StrEnum):
     FILLED = "FILLED"
     REJECTED = "REJECTED"
     CANCELLED = "CANCELLED"
+    EXPIRED = "EXPIRED"  # 그날 장이 끝날 때까지 다 체결되지 않음
+
+    @property
+    def is_open(self) -> bool:
+        """아직 체결이 더 될 수 있는 상태."""
+        return self in (OrderStatus.SUBMITTED, OrderStatus.PARTIALLY_FILLED)
 
 
 class _Frozen(BaseModel):
     model_config = ConfigDict(frozen=True)
+
+
+class Instrument(_Frozen):
+    """매매 대상 종목."""
+
+    market: Market
+    symbol: str
+    name: str = ""
+    exchange: str | None = None  # 미국: NASDAQ, NYSE, AMEX
 
 
 class Signal(_Frozen):
@@ -105,6 +129,13 @@ class OrderResult(_Frozen):
     avg_fill_price: Decimal | None = None
     message: str = ""
     created_at: UtcDatetime = Field(default_factory=now_utc)
+
+
+class SkippedSignal(_Frozen):
+    """주문하지 않은 신호와 그 이유."""
+
+    signal: Signal
+    reason: str
 
 
 class Holding(_Frozen):

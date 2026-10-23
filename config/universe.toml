@@ -1,0 +1,48 @@
+# 매매 대상 종목. 예시 종목이니 원하는 종목으로 바꾼다.
+# 목록에서 빼도 이미 들고 있는 종목은 전략이 팔 때까지 계속 관리한다(새로 사지만 않는다).
+# exchange(미국만): NASDAQ, NYSE, AMEX
+
+[[KR]]
+symbol = "005930"
+name = "삼성전자"
+
+[[KR]]
+symbol = "000660"
+name = "SK하이닉스"
+
+[[KR]]
+symbol = "005380"
+name = "현대차"
+
+[[KR]]
+symbol = "035420"
+name = "NAVER"
+
+[[KR]]
+symbol = "105560"
+name = "KB금융"
+
+[[US]]
+symbol = "AAPL"
+name = "Apple"
+exchange = "NASDAQ"
+
+[[US]]
+symbol = "MSFT"
+name = "Microsoft"
+exchange = "NASDAQ"
+
+[[US]]
+symbol = "NVDA"
+name = "NVIDIA"
+exchange = "NASDAQ"
+
+[[US]]
+symbol = "AMZN"
+name = "Amazon"
+exchange = "NASDAQ"
+
+[[US]]
+symbol = "JPM"
+name = "JPMorgan Chase"
+exchange = "NYSE"
