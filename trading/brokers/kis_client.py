@@ -4,7 +4,8 @@
 로그와 오류 문장에 넣지 않는다. 참고: github.com/koreainvestment/open-trading-api
 
 - 토큰은 1일 유효하고, 발급할 때마다 카카오 알림톡이 가며 1분에 1번만 발급된다.
-  그래서 캐시해 다시 쓴다.
+  그래서 캐시해 다시 쓴다. 1분 제한(EGW00133)에 걸리면 1분 기다렸다가 캐시를 다시 보고
+  (그 사이 다른 실행이 받아 뒀을 수 있다), 없으면 한 번 더 발급받는다.
 - 모의투자는 초당 호출 한도가 낮다(실제로 0.5초 간격에서도 한도 초과가 났다). 1초 간격으로 맞추고,
   해외 조회도 초당 1회로 맞춘다(CLAUDE.md).
 - 초당 한도 초과(EGW00201)는 잠시 쉬고 다시 시도한다.
@@ -39,6 +40,8 @@ LIVE_URL = "https://openapi.koreainvestment.com:9443"
 PAPER_URL = "https://openapivts.koreainvestment.com:29443"
 
 RATE_LIMIT_CODE = "EGW00201"  # 초당 거래건수 초과
+TOKEN_RATE_CODE = "EGW00133"  # 토큰 발급은 1분에 1번
+TOKEN_RATE_WAIT = 61.0  # 초
 TOKEN_ERROR_CODES = {"EGW00121", "EGW00123"}  # 유효하지 않은 토큰, 만료된 토큰
 # 남은 시간이 이보다 짧으면 실행 도중 만료되지 않게 새로 발급받는다
 TOKEN_MARGIN = timedelta(minutes=10)
@@ -51,6 +54,10 @@ class KisApiError(BrokerError):
         super().__init__(f"KIS {tr_id} 거절: {message} ({code})")
         self.code = code
         self.message = message
+
+
+class TokenRateLimitError(BrokerError):
+    """토큰을 1분 안에 다시 발급받으려 했다."""
 
 
 @dataclass(frozen=True)
@@ -327,16 +334,26 @@ class KisClient:
     # ---- 토큰 ----
 
     def _access_token(self) -> str:
-        now = self._clock()
-        if self._token and self._token.expires_at - now > TOKEN_MARGIN:
+        if self._token and self._token.expires_at - self._clock() > TOKEN_MARGIN:
             return self._token.token
-        cached = self._cache.load(self._key_id)
-        if cached and cached.expires_at - now > TOKEN_MARGIN:
-            self._token = cached
-            return cached.token
-        self._token = self._issue_token()
-        self._cache.save(self._key_id, self._token)
-        return self._token.token
+        waited = False
+        while True:
+            cached = self._cache.load(self._key_id)
+            if cached and cached.expires_at - self._clock() > TOKEN_MARGIN:
+                self._token = cached
+                return cached.token
+            try:
+                token = self._issue_token()
+            except TokenRateLimitError:
+                if waited:
+                    raise
+                logger.warning("KIS 토큰 발급은 1분에 1번이라 기다렸다가 다시 시도합니다")
+                self._sleep(TOKEN_RATE_WAIT)
+                waited = True
+                continue
+            self._token = token
+            self._cache.save(self._key_id, token)
+            return token.token
 
     def _issue_token(self) -> CachedToken:
         logger.info("KIS 접근 토큰을 새로 발급받습니다")
@@ -357,7 +374,8 @@ class KisClient:
         if resp.status_code != 200 or not token:
             detail = data.get("error_description") or data.get("msg1") or ""
             code = data.get("error_code") or data.get("msg_cd") or ""
-            raise BrokerError(f"KIS 토큰 발급 실패: HTTP {resp.status_code} {code} {detail}")
+            error = TokenRateLimitError if code == TOKEN_RATE_CODE else BrokerError
+            raise error(f"KIS 토큰 발급 실패: HTTP {resp.status_code} {code} {detail}")
         expired = data.get("access_token_token_expired")
         if expired:
             expires_at = datetime.strptime(expired, "%Y-%m-%d %H:%M:%S").replace(tzinfo=KST)

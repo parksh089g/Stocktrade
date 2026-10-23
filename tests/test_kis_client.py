@@ -108,13 +108,52 @@ def test_rejected_token_is_renewed_once(tmp_path):
     assert fake.tokens_issued == 2
 
 
+TOKEN_RATE_LIMITED = {"error_code": "EGW00133", "error_description": "1분당 1회"}
+
+
 def test_token_issue_failure(tmp_path):
     fake = FakeKis()
     fake.inject = [
-        httpx.Response(403, json={"error_code": "EGW00133", "error_description": "1분당 1회"})
+        httpx.Response(403, json={"error_code": "EGW00103", "error_description": "앱키"})
     ]
-    with pytest.raises(BrokerError, match=r"토큰 발급 실패.*EGW00133"):
+    with pytest.raises(BrokerError, match=r"토큰 발급 실패.*EGW00103"):
         price(make(fake, tmp_path))
+    assert len(fake.requests) == 1  # 1분 제한이 아니면 다시 시도하지 않는다
+
+
+def test_token_rate_limit_waits_a_minute_and_retries(tmp_path):
+    fake = FakeKis()
+    fake.inject = [httpx.Response(403, json=TOKEN_RATE_LIMITED)]
+    time = FakeTime()
+    price(make(fake, tmp_path, time=time))
+    assert 61.0 in time.sleeps
+    assert fake.tokens_issued == 1
+
+
+def test_token_rate_limit_twice_gives_up(tmp_path):
+    fake = FakeKis()
+    fake.inject = [httpx.Response(403, json=TOKEN_RATE_LIMITED)] * 2
+    with pytest.raises(BrokerError, match="EGW00133"):
+        price(make(fake, tmp_path))
+    assert fake.tokens_issued == 0
+
+
+def test_token_rate_limit_uses_token_another_run_cached_meanwhile(tmp_path):
+    fake = FakeKis()
+    fake.inject = [httpx.Response(403, json=TOKEN_RATE_LIMITED)]
+    store = MemoryStore()
+    cache = EncryptedTokenCache(store, "t", APP_SECRET)
+    time = FakeTime()
+    client = make(fake, tmp_path, time=time, token_cache=cache)
+
+    def other_run_saves_token(seconds: float) -> None:
+        time.sleep(seconds)
+        if seconds == 61.0:  # 기다리는 동안 다른 실행이 받아서 저장해 뒀다
+            cache.save(client._key_id, CachedToken(fake.token, datetime(2026, 10, 27, tzinfo=UTC)))
+
+    client._sleep = other_run_saves_token
+    price(client)
+    assert fake.tokens_issued == 0  # 새로 받지 않고 그 토큰을 쓴다
 
 
 # ---- GitHub Actions용 캐시(저장소에 암호화해 둔다) ----
