@@ -1,10 +1,10 @@
 # 주식 자동 매매 시스템
 
-국내와 미국 주식을 일봉 기반 전략으로 자동 매매한다. 엔진은 GitHub Actions에서 하루 1~2번 실행되고, 기록은 Supabase, 알림은 텔레그램, 확인과 일시정지는 폰 웹앱(PWA)으로 한다. 유료 서버는 쓰지 않는다.
+국내와 미국 주식을 일봉 기반 전략으로 자동 매매한다. 엔진은 GitHub Actions에서 하루 1~2번 실행되고, 기록은 Supabase, 알림은 폰 웹앱(PWA)의 웹 푸시, 확인과 일시정지도 같은 웹앱으로 한다. 유료 서버는 쓰지 않는다.
 
 ## 기술
 - Python 3.12, uv, pandas, httpx, pydantic-settings, pytest, ruff
-- 웹앱: Vite + TypeScript 정적 PWA, Cloudflare Pages 배포, Supabase Auth
+- 웹앱: Vite + TypeScript 정적 PWA, Cloudflare Pages 배포, Supabase Auth, 웹 푸시(VAPID, 엔진은 pywebpush로 발송)
 
 ## 구조
 - trading/core: Order, Position, Signal 같은 공통 모델

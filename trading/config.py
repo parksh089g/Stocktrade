@@ -29,8 +29,9 @@ class Settings(BaseSettings):
     supabase_url: str | None = None
     supabase_service_key: SecretStr | None = None
 
-    telegram_bot_token: SecretStr | None = None
-    telegram_chat_id: str | None = None
+    # 웹 푸시 VAPID 개인키(python -m trading.notify.vapid로 만든다)와 연락처(mailto: 또는 https:)
+    vapid_private_key: SecretStr | None = None
+    vapid_subject: str = "mailto:stocktrade@example.com"
 
     universe_path: str = "config/universe.toml"
     # 하루 매수 금액 상한(시장별). 비우면 상한 없음. 실전 전환 초기에 작게 둔다.
@@ -60,6 +61,6 @@ class Settings(BaseSettings):
             self.kis_app_secret,
             self.kis_account_no,
             self.supabase_service_key,
-            self.telegram_bot_token,
+            self.vapid_private_key,
         ]
         return [s.get_secret_value() for s in secrets if s and s.get_secret_value()]

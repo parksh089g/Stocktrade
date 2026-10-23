@@ -46,10 +46,10 @@ def test_unknown_mode_rejected():
 
 
 def test_secrets_hidden_in_repr_and_listed_for_redaction():
-    s = make(kis_app_key="abcd-secret", telegram_bot_token="tg-token-999")
+    s = make(kis_app_key="abcd-secret", vapid_private_key="vapid-key-999")
     assert "abcd-secret" not in repr(s)
-    assert "tg-token-999" not in str(s)
-    assert set(s.secret_values()) == {"abcd-secret", "tg-token-999"}
+    assert "vapid-key-999" not in str(s)
+    assert set(s.secret_values()) == {"abcd-secret", "vapid-key-999"}
 
 
 def test_empty_env_values_are_ignored(monkeypatch: pytest.MonkeyPatch):

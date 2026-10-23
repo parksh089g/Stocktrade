@@ -4,8 +4,8 @@
   uv run python -m trading.engine --market KR
   uv run python -m trading.engine --market US --ignore-hours   # fake 증권사로 장 시간 무시하고 확인
 
-지금은 fake 증권사, 메모리 저장소, 화면 출력 알림만 쓴다.
-Supabase/텔레그램은 M4, KIS는 M5에서 연결한다.
+fake 증권사는 메모리 저장소와 화면 출력만 쓴다.
+KIS(M5)는 Supabase 저장소와 웹 푸시(VAPID 키가 있으면)를 쓴다.
 """
 
 import argparse
@@ -18,10 +18,9 @@ from trading.config import Settings
 from trading.core.clock import now_utc, trading_date
 from trading.core.log import setup_logging
 from trading.core.models import Market
+from trading.engine.factory import build_notifier, build_store
 from trading.engine.report import RunStatus
 from trading.engine.runner import Engine
-from trading.notify.base import ConsoleNotifier
-from trading.storage.memory import MemoryStore
 from trading.strategies import STRATEGIES, create_strategy
 from trading.universe import load_universe
 
@@ -53,10 +52,11 @@ def main(argv: list[str] | None = None) -> int:
     yesterday = (pd.Timestamp(trading_date(market, now_utc())) - pd.offsets.BDay(1)).date()
     broker = make_demo_broker(universe, end=yesterday, seed=args.seed)
 
+    store = build_store(settings)
     engine = Engine(
         broker=broker,
-        store=MemoryStore(),
-        notifier=ConsoleNotifier(),
+        store=store,
+        notifier=build_notifier(settings, store),
         strategies=[create_strategy(name) for name in STRATEGIES],
         universe=universe,
         mode=settings.trading_mode,

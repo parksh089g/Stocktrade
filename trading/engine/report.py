@@ -68,20 +68,24 @@ _ORDER_STATUS = {
 }
 
 
-def format_report(report: RunReport, names: Mapping[str, str] | None = None) -> str:
-    """알림용 문장. 시간은 한국 시간으로 보여준다."""
+def report_title(report: RunReport) -> str:
+    """알림 제목. 예: [모의투자] 국내 · 완료"""
+    mode = _MODE.get(report.mode, report.mode)
+    return f"[{mode}] {report.market.label} · {_STATUS[report.status]}"
+
+
+def report_body(report: RunReport, names: Mapping[str, str] | None = None) -> str:
+    """알림 본문."""
     names = names or {}
-    market = report.market
-    fmt = market.format_price
+    fmt = report.market.format_price
 
     def label(symbol: str) -> str:
         name = names.get(symbol)
         return f"{name}({symbol})" if name else symbol
 
-    lines = [
-        f"[{_MODE.get(report.mode, report.mode)}] {market.label} · {format_kst(report.started_at)}",
-        f"상태: {_STATUS[report.status]}" + (f" - {report.message}" if report.message else ""),
-    ]
+    lines = []
+    if report.message:
+        lines.append(report.message)
     if report.error:
         lines.append(f"오류: {report.error}")
 
@@ -119,3 +123,10 @@ def format_report(report: RunReport, names: Mapping[str, str] | None = None) -> 
     if report.status is RunStatus.OK and not report.signals and not report.fills:
         lines.append("오늘은 신호가 없습니다.")
     return "\n".join(lines)
+
+
+def format_report(report: RunReport, names: Mapping[str, str] | None = None) -> str:
+    """기록(웹앱 알림함)용 전체 문장. 시간은 한국 시간으로 보여준다."""
+    header = f"{report_title(report)} · {format_kst(report.started_at)}"
+    body = report_body(report, names)
+    return f"{header}\n{body}" if body else header

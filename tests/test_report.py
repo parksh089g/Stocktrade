@@ -61,8 +61,7 @@ def test_full_report_text():
     )
     text = format_report(report, {"005930": "삼성전자", "000660": "SK하이닉스"})
 
-    assert text.splitlines()[0] == "[실전] 국내 · 2026-10-26 08:40 KST"
-    assert "상태: 완료" in text
+    assert text.splitlines()[0] == "[실전] 국내 · 완료 · 2026-10-26 08:40 KST"
     assert " · 매도 SK하이닉스(000660) 3주 @ 201,000 [trend_ma]" in text
     assert " · 매수 삼성전자(005930) 17주 지정가 70,700 [trend_ma] → 접수" in text
     assert "   (골든크로스)" in text
@@ -80,8 +79,7 @@ def test_error_report_text():
         error="BrokerError: timeout. 주문하지 않았습니다",
     )
     text = format_report(report)
-    assert text.startswith("[모의투자] 미국")
-    assert "상태: 오류" in text
+    assert text.splitlines()[0].startswith("[모의투자] 미국 · 오류 · ")
     assert "오류: BrokerError: timeout" in text
 
 
@@ -100,3 +98,17 @@ def test_rejected_order_shows_reason():
         ],
     )
     assert "→ 거부: 주문 가능 금액이 부족합니다" in format_report(report)
+
+
+def test_title_and_body_split():
+    from trading.engine.report import report_body, report_title
+
+    report = RunReport(
+        market=Market.KR,
+        mode="paper",
+        started_at=STARTED,
+        status=RunStatus.PAUSED,
+        message="점검 중 (손절 매도만 냅니다)",
+    )
+    assert report_title(report) == "[모의투자] 국내 · 일시정지"
+    assert report_body(report) == "점검 중 (손절 매도만 냅니다)"

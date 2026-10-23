@@ -6,6 +6,7 @@ from decimal import Decimal
 
 import pytest
 
+from tests.fake_postgrest import FakePostgrest
 from tests.helpers import Clock, StrategyA, StrategyB, bars_from_closes
 from trading.brokers.base import BrokerError
 from trading.brokers.fake import FakeBroker
@@ -24,7 +25,9 @@ from trading.engine.runner import Engine
 from trading.notify.base import MemoryNotifier
 from trading.risk.config import RiskConfig
 from trading.risk.planner import ALREADY_ORDERED
+from trading.storage.base import StoreError
 from trading.storage.memory import MemoryStore
+from trading.storage.supabase import SupabaseStore
 
 D = Decimal
 KR = Market.KR
@@ -49,6 +52,10 @@ class Env:
 
     @property
     def message(self) -> str:
+        return self.notifier.messages[-1].text
+
+    @property
+    def notification(self):
         return self.notifier.messages[-1]
 
     def broker_orders(self, day: date = MON):
@@ -106,6 +113,8 @@ def test_no_signal_run(env: Env):
     assert report.orders == []
     assert "신호가 없습니다" in env.message
     assert env.store.runs == [report]
+    assert env.notification.url == "/runs/1"
+    assert not env.notification.urgent
 
 
 def test_buy_signal_places_limit_order(env: Env):
@@ -118,8 +127,10 @@ def test_buy_signal_places_limit_order(env: Env):
     assert (o.side, o.order_type, o.limit_price, o.qty) == (Side.BUY, OrderType.LIMIT, 70_700, 17)
     assert len(env.broker_orders()) == 1
     assert env.store.get_orders(KR, MON)[0].broker_order_id == result.broker_order_id
+    assert env.notification.title == "[모의투자] 국내 · 완료"
     assert "매수 삼성전자(005930) 17주 지정가 70,700 [a]" in env.message
-    assert "08:40 KST" in env.message
+    # 알림함 기록에는 한국 시간이 들어간다
+    assert env.store.summaries[-1].startswith("[모의투자] 국내 · 완료 · 2026-10-26 08:40 KST")
 
 
 def test_full_cycle_buy_fill_then_sell(env: Env):
@@ -230,7 +241,8 @@ def test_paused_places_no_orders_but_still_syncs(env: Env):
     assert report.status is RunStatus.PAUSED
     assert report.orders == []
     assert len(report.fills) == 1  # 체결 확인은 한다
-    assert "일시정지 - 폰에서 정지" in env.message
+    assert env.notification.title == "[모의투자] 국내 · 일시정지"
+    assert "폰에서 정지 (손절 매도만 냅니다)" in env.message
     assert len(env.broker.get_orders(KR, MON + timedelta(days=1))) == 0
 
 
@@ -344,7 +356,8 @@ def test_pause_read_error_means_no_orders(env: Env):
     assert report.status is RunStatus.ERROR
     assert "주문하지 않았습니다" in report.error
     assert env.broker_orders() == []
-    assert "상태: 오류" in env.message
+    assert env.notification.title == "[모의투자] 국내 · 오류"
+    assert env.notification.urgent
 
 
 @pytest.mark.parametrize("method", ["get_balance", "get_holdings", "get_orders"])
@@ -458,6 +471,7 @@ def test_mismatch_between_records_and_account_is_warned(env: Env):
     report = env.run()
     assert "005930: 전략 기록 0주, 계좌 10주로 다릅니다" in report.warnings
     assert "확인 필요" in env.message
+    assert env.notification.urgent
 
 
 def test_daily_buy_cap():
@@ -465,3 +479,60 @@ def test_daily_buy_cap():
     env.a.signals = {"005930": Side.BUY}
     [result] = env.run().orders
     assert result.order.qty == 7  # 500,000 / (70,700 × 1.003)
+
+
+# ---- 기록 저장 실패, Supabase 저장소 ----
+
+
+def test_order_placed_but_record_failed_stops_and_warns():
+    class FailOnSecondSave(MemoryStore):
+        saves = 0
+
+        def save_order(self, result):
+            FailOnSecondSave.saves += 1
+            if FailOnSecondSave.saves == 2:
+                raise StoreError("db down")
+            super().save_order(result)
+
+    env = make_env(store=FailOnSecondSave())
+    env.a.signals = {"005930": Side.BUY, "000660": Side.BUY}
+    report = env.run()
+
+    assert report.status is RunStatus.ERROR
+    assert "증권사에 냈지만 기록 저장에 실패" in report.error
+    assert "주문하지 않았습니다" not in report.error
+    assert len(env.broker_orders()) == 1  # 두 번째 주문은 내지 않았다
+    assert len(report.orders) == 1
+
+
+def test_full_cycle_with_supabase_store():
+    fake = FakePostgrest()
+    store = SupabaseStore(
+        "https://test.supabase.co",
+        fake.key,
+        "paper",
+        transport=fake.transport,
+        sleep=lambda _: None,
+    )
+    env = make_env(store=store)
+
+    env.a.signals = {"005930": Side.BUY}
+    env.broker.set_price(KR, "005930", 72_000)
+    env.run()
+    env.broker.set_price(KR, "005930", 70_500)
+    env.broker.process_open_orders()
+
+    env.a.signals = {}
+    env.next_day()
+    env.run()
+    [pos] = fake.tables["positions"]
+    assert (pos["mode"], pos["strategy"], pos["qty"]) == ("paper", "a", 17)
+
+    env.a.signals = {"005930": Side.SELL}
+    env.next_day()
+    report = env.run()
+    assert report.status is RunStatus.OK
+    assert fake.tables["positions"] == []
+    assert [o["status"] for o in fake.tables["orders"]] == ["FILLED", "FILLED"]
+    assert len(fake.tables["runs"]) == 3
+    assert env.notification.url == "/runs/3"

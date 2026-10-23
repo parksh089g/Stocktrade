@@ -9,7 +9,8 @@
 - 스위치, 계좌, 주문 내역 조회가 실패하면 주문하지 않고 오류 알림만 보낸다.
 - 한 종목의 시세나 신호 계산이 실패하면 그 종목만 건너뛰고 경고로 알린다.
 - 주문 중 오류가 나면 남은 주문을 내지 않는다. 접수 여부가 불확실하니 증권사 앱 확인을 안내한다.
-- 기록 저장이나 알림이 실패해도 실행 결과는 돌려준다(로그에 남긴다).
+- 주문은 나갔는데 기록 저장이 실패해도 남은 주문을 내지 않고 알린다.
+- 실행 기록 저장이나 알림이 실패해도 실행 결과는 돌려준다. 알림 실패는 notify_failed로 표시한다.
 """
 
 import logging
@@ -32,9 +33,15 @@ from trading.core.models import (
     Signal,
     SkippedSignal,
 )
-from trading.engine.report import RunReport, RunStatus, format_report
+from trading.engine.report import (
+    RunReport,
+    RunStatus,
+    format_report,
+    report_body,
+    report_title,
+)
 from trading.engine.sync import record_new_order, sync_open_orders
-from trading.notify.base import Notifier
+from trading.notify.base import Notification, Notifier
 from trading.risk.config import RiskConfig
 from trading.risk.planner import PlannedOrder, plan_orders
 from trading.storage.base import Store
@@ -50,8 +57,19 @@ PAUSED_SKIP = "일시정지 중이라 주문하지 않았습니다(손절 매도
 
 class OrderPlacementError(Exception):
     def __init__(self, order: Order, cause: Exception) -> None:
-        super().__init__(f"{order.symbol} 주문 중 오류: {type(cause).__name__}: {cause}")
-        self.order = order
+        super().__init__(
+            f"{order.symbol} 주문 중 오류({type(cause).__name__}: {cause}). "
+            "남은 주문은 내지 않았습니다. 이 주문이 접수됐는지 증권사 앱에서 확인하세요"
+        )
+
+
+class OrderRecordError(Exception):
+    def __init__(self, order: Order, cause: Exception) -> None:
+        super().__init__(
+            f"{order.symbol} 주문은 증권사에 냈지만 기록 저장에 실패했습니다"
+            f"({type(cause).__name__}: {cause}). 남은 주문은 내지 않았습니다. "
+            "증권사 앱에서 주문을 확인하세요"
+        )
 
 
 class Engine:
@@ -88,25 +106,32 @@ class Engine:
         report = RunReport(market=market, mode=self.mode, started_at=self.clock())
         try:
             self._run(market, report)
-        except OrderPlacementError as e:
-            logger.exception("주문 중 오류")
+        except (OrderPlacementError, OrderRecordError) as e:
+            logger.exception("주문 단계 오류")
             report.status = RunStatus.ERROR
-            report.error = self._clean(
-                f"{e}. 남은 주문은 내지 않았습니다. 이 주문이 접수됐는지 증권사 앱에서 확인하세요"
-            )
+            report.error = self._clean(str(e))
         except Exception as e:
             logger.exception("실행 중 오류")
             report.status = RunStatus.ERROR
             report.error = self._clean(f"{type(e).__name__}: {e}. 주문하지 않았습니다")
         report.finished_at = self.clock()
 
+        names = self._names(market)
+        run_id = None
         try:
-            self.store.save_run(report)
+            run_id = self.store.save_run(report, self._clean(format_report(report, names)))
         except Exception as e:
             logger.exception("실행 기록 저장 실패")
             report.warnings.append(self._clean(f"실행 기록 저장 실패: {type(e).__name__}: {e}"))
+
+        notification = Notification(
+            title=report_title(report),
+            body=self._clean(report_body(report, names)),
+            url=f"/runs/{run_id}" if run_id else "/",
+            urgent=report.status is RunStatus.ERROR or bool(report.warnings),
+        )
         try:
-            self.notifier.send(self._clean(format_report(report, self._names(market))))
+            self.notifier.send(notification)
         except Exception:
             logger.exception("알림 전송 실패")
             report.notify_failed = True
@@ -243,7 +268,10 @@ class Engine:
             except Exception as e:
                 raise OrderPlacementError(p.order, e) from e
             report.orders.append(result)
-            recorded = record_new_order(p.order.market, self.store, result)
+            try:
+                recorded = record_new_order(p.order.market, self.store, result)
+            except Exception as e:
+                raise OrderRecordError(p.order, e) from e
             report.fills += recorded.fills
             report.warnings += recorded.warnings
 

@@ -19,7 +19,7 @@ def test_cli_runs_with_fake_broker(market, capsys):
     assert main(["--market", market, "--ignore-hours", "--seed", "11"]) == 0
     out = capsys.readouterr().out
     assert "[모의투자]" in out
-    assert "상태: 완료" in out
+    assert "· 완료" in out
     assert "주문 1건" in out
 
 

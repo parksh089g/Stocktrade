@@ -1,6 +1,7 @@
-"""기록 저장소 인터페이스. M4에서 Supabase로 구현한다.
+"""기록 저장소 인터페이스. 운영은 Supabase(supabase.py), 테스트와 로컬은 메모리(memory.py).
 
-저장하는 것: 일시정지 스위치, 전략별 보유분, 주문 기록, 실행 기록.
+저장하는 것: 일시정지 스위치, 전략별 보유분, 주문 기록, 실행 기록, 웹 푸시 구독.
+보유분과 주문은 모의투자/실전 계좌가 섞이지 않도록 모드별로 따로 둔다.
 """
 
 from abc import ABC, abstractmethod
@@ -20,6 +21,14 @@ class PauseState(BaseModel):
     paused: bool = False
     reason: str = ""
     updated_at: UtcDatetime | None = None
+
+
+class PushSubscription(BaseModel):
+    """웹앱이 등록한 기기 하나의 푸시 구독."""
+
+    endpoint: str
+    p256dh: str
+    auth: str
 
 
 class Store(ABC):
@@ -52,4 +61,12 @@ class Store(ABC):
         """client_order_id가 같은 주문을 덮어쓰거나 새로 넣는다."""
 
     @abstractmethod
-    def save_run(self, report: RunReport) -> None: ...
+    def save_run(self, report: RunReport, summary: str) -> str | None:
+        """실행 기록을 남기고 그 id를 돌려준다. summary는 알림함에 보여 줄 전체 문장."""
+
+    @abstractmethod
+    def get_push_subscriptions(self) -> list[PushSubscription]: ...
+
+    @abstractmethod
+    def delete_push_subscription(self, endpoint: str) -> None:
+        """만료된 구독을 지운다."""

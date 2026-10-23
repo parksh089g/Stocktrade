@@ -5,7 +5,7 @@ from datetime import date
 from trading.core.clock import now_utc, trading_date
 from trading.core.models import Market, OrderResult, Position
 from trading.engine.report import RunReport
-from trading.storage.base import PauseState, Store, StoreError
+from trading.storage.base import PauseState, PushSubscription, Store, StoreError
 
 
 class MemoryStore(Store):
@@ -14,6 +14,8 @@ class MemoryStore(Store):
         self._positions: dict[tuple[Market, str, str], Position] = {}
         self._orders: dict[str, OrderResult] = {}
         self.runs: list[RunReport] = []
+        self.summaries: list[str] = []
+        self.subscriptions: dict[str, PushSubscription] = {}
         # 메서드 이름을 넣으면 그 메서드가 StoreError를 던진다 (오류 상황 테스트용)
         self.fail_on: set[str] = set()
 
@@ -57,6 +59,20 @@ class MemoryStore(Store):
         self._maybe_fail("save_order")
         self._orders[result.order.client_order_id] = result
 
-    def save_run(self, report: RunReport) -> None:
+    def save_run(self, report: RunReport, summary: str) -> str | None:
         self._maybe_fail("save_run")
         self.runs.append(report)
+        self.summaries.append(summary)
+        return str(len(self.runs))
+
+    def add_push_subscription(self, subscription: PushSubscription) -> None:
+        """웹앱이 하는 일을 대신한다. 테스트용."""
+        self.subscriptions[subscription.endpoint] = subscription
+
+    def get_push_subscriptions(self) -> list[PushSubscription]:
+        self._maybe_fail("get_push_subscriptions")
+        return list(self.subscriptions.values())
+
+    def delete_push_subscription(self, endpoint: str) -> None:
+        self._maybe_fail("delete_push_subscription")
+        self.subscriptions.pop(endpoint, None)
