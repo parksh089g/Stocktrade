@@ -31,7 +31,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--ignore-hours",
         action="store_true",
-        help="fake 증권사에서만: 휴장일/주문 시간 검사를 건너뛴다",
+        help="fake 증권사나 시험 실행(--dry-run)에서만: 휴장일/주문 시간 검사를 건너뛴다",
     )
     parser.add_argument("--seed", type=int, default=0, help="fake 증권사 가짜 데이터 시드")
     args = parser.parse_args(argv)
@@ -40,8 +40,8 @@ def main(argv: list[str] | None = None) -> int:
     setup_logging(settings.secret_values())
     market = Market(args.market)
 
-    if args.ignore_hours and settings.broker != "fake":
-        print("--ignore-hours는 fake 증권사에서만 쓸 수 있습니다.")
+    if args.ignore_hours and settings.broker != "fake" and not args.dry_run:
+        print("--ignore-hours는 fake 증권사나 시험 실행(--dry-run)에서만 쓸 수 있습니다.")
         return 2
     try:
         universe = load_universe(settings.universe_path)

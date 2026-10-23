@@ -46,6 +46,7 @@ class FakeBroker(BrokerAdapter):
         *,
         market_order_markets: Iterable[Market] = (Market.KR,),
         fee_rate: Decimal = Decimal("0"),
+        sell_tax_rate: Decimal = Decimal("0"),
         clock: Callable[[], datetime] = now_utc,
         holidays: Iterable[date] = (),
     ) -> None:
@@ -53,6 +54,7 @@ class FakeBroker(BrokerAdapter):
         self._cash: dict[Market, Decimal] = {m: Decimal(str(cash.get(m, 0))) for m in Market}
         self._market_order_markets = frozenset(market_order_markets)
         self._fee_rate = fee_rate
+        self._sell_tax_rate = sell_tax_rate
         self._clock = clock
         self.holidays: set[date] = set(holidays)
         self._bars: dict[Key, pd.DataFrame] = {}
@@ -86,6 +88,28 @@ class FakeBroker(BrokerAdapter):
                 price = self._prices.get((result.order.market, result.order.symbol))
                 if price is not None and _is_marketable(result.order, price):
                     self._orders[i] = self._fill(result, price)
+
+    def touch_open_orders(self, market: Market, symbol: str, high: Decimal, low: Decimal) -> None:
+        """하루 동안 가격이 high~low 사이를 움직였을 때 지정가에 닿은 미체결 주문을
+        지정가로 체결한다.
+
+        백테스트에서 일봉의 고가/저가로 장중 체결을 흉내 낼 때 쓴다.
+        """
+        for i, result in enumerate(self._orders):
+            o = result.order
+            if not result.status.is_open or o.market != market or o.symbol != symbol:
+                continue
+            if o.limit_price is None:
+                continue
+            touched = o.limit_price >= low if o.side is Side.BUY else o.limit_price <= high
+            if touched:
+                self._orders[i] = self._fill(result, o.limit_price)
+
+    def expire_open_orders(self, market: Market) -> None:
+        """장 마감: 남은 미체결 주문을 만료시킨다."""
+        for i, result in enumerate(self._orders):
+            if result.status.is_open and result.order.market == market:
+                self._orders[i] = result.model_copy(update={"status": OrderStatus.EXPIRED})
 
     def fill_order(
         self, broker_order_id: str, qty: int | None = None, price: Decimal | int | str | None = None
@@ -243,7 +267,7 @@ class FakeBroker(BrokerAdapter):
             new_held = held + fill_qty
             self._holdings[key] = (new_held, (held * avg + amount) / new_held)
         else:
-            self._cash[order.market] += amount - fee
+            self._cash[order.market] += amount - fee - amount * self._sell_tax_rate
             if held == fill_qty:
                 del self._holdings[key]
             else:

@@ -182,8 +182,8 @@ def test_paper_calls_are_spaced(tmp_path):
     client = make(fake, tmp_path, time=time)
     for _ in range(3):
         price(client)
-    # 토큰 발급 + 조회 3번: 0.5초 간격
-    assert time.sleeps == [0.5, 0.5, 0.5]
+    # 토큰 발급 + 조회 3번: 1초 간격
+    assert time.sleeps == [1.0, 1.0, 1.0]
 
 
 def test_overseas_calls_are_one_per_second(tmp_path):

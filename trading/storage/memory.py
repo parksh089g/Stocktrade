@@ -51,6 +51,10 @@ class MemoryStore(Store):
             if r.order.market == market and trading_date(market, r.created_at) == day
         ]
 
+    def all_orders(self) -> list[OrderResult]:
+        """모든 주문 기록. 백테스트 집계용."""
+        return list(self._orders.values())
+
     def get_open_orders(self, market: Market) -> list[OrderResult]:
         self._maybe_fail("get_open_orders")
         return [r for r in self._orders.values() if r.order.market == market and r.status.is_open]

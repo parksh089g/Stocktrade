@@ -5,7 +5,8 @@
 
 - 토큰은 1일 유효하고, 발급할 때마다 카카오 알림톡이 가며 1분에 1번만 발급된다.
   그래서 캐시해 다시 쓴다.
-- 모의투자는 초당 호출 한도가 낮다. 해외 조회는 초당 1회로 맞춘다(CLAUDE.md).
+- 모의투자는 초당 호출 한도가 낮다(실제로 0.5초 간격에서도 한도 초과가 났다). 1초 간격으로 맞추고,
+  해외 조회도 초당 1회로 맞춘다(CLAUDE.md).
 - 초당 한도 초과(EGW00201)는 잠시 쉬고 다시 시도한다.
   토큰 만료(EGW00123)는 새로 발급받아 한 번 다시 시도한다.
 - 주문(POST)은 연결 오류가 나도 다시 보내지 않는다.
@@ -128,8 +129,8 @@ class KisClient:
         self._clock = clock
         self._sleep = sleep
         self._timer = timer
-        # 모의투자는 초당 2건 정도, 실전은 초당 20건 미만으로 맞춘다
-        self._min_interval = min_interval if min_interval is not None else (0.5 if paper else 0.06)
+        # 모의투자는 초당 1건, 실전은 초당 20건 미만으로 맞춘다
+        self._min_interval = min_interval if min_interval is not None else (1.0 if paper else 0.06)
         self._overseas_interval = overseas_interval
         self._max_rate_retries = max_rate_retries
         self._last_call = float("-inf")

@@ -232,3 +232,30 @@ def test_demo_broker_has_bars_for_universe():
         for inst in instruments:
             bars = b.get_daily_bars(market, inst.symbol, 100)
             assert bars.index[-1].date() == date(2026, 10, 23)
+
+
+def test_touch_fills_at_limit_and_expire(broker: FakeBroker):
+    broker.set_holding(Market.US, "AAPL", 5, "150")
+    buy = broker.place_order(make_order(Market.US, "AAPL", qty=2, limit=D("175")))
+    sell = broker.place_order(make_order(Market.US, "AAPL", Side.SELL, qty=5, limit=D("190")))
+    assert buy.status is sell.status is OrderStatus.SUBMITTED
+
+    # 장중 고가 189, 저가 174.5 → 매수 지정가(175)만 닿았다
+    broker.touch_open_orders(Market.US, "AAPL", high=D("189"), low=D("174.5"))
+    orders = {o.broker_order_id: o for o in broker.get_orders(Market.US, date(2026, 10, 22))}
+    assert orders[buy.broker_order_id].status is OrderStatus.FILLED
+    assert orders[buy.broker_order_id].avg_fill_price == D("175")
+    assert orders[sell.broker_order_id].status is OrderStatus.SUBMITTED
+
+    broker.expire_open_orders(Market.US)
+    orders = {o.broker_order_id: o for o in broker.get_orders(Market.US, date(2026, 10, 22))}
+    assert orders[sell.broker_order_id].status is OrderStatus.EXPIRED
+    assert broker.get_holdings(Market.US)[0].qty == 7  # 만료된 매도는 예약 수량도 풀린다
+
+
+def test_sell_tax(broker: FakeBroker):
+    b = FakeBroker(cash={Market.KR: 0}, sell_tax_rate=D("0.002"))
+    b.set_price(Market.KR, "005930", 70_000)
+    b.set_holding(Market.KR, "005930", 10, 60_000)
+    b.place_order(make_order(side=Side.SELL, qty=10))
+    assert b.get_balance(Market.KR).cash == D(700_000) - D(1_400)

@@ -39,6 +39,7 @@ from trading.core.models import (
     BAR_COLUMNS,
     Balance,
     Holding,
+    Instrument,
     Market,
     Order,
     OrderResult,
@@ -116,6 +117,11 @@ class KisBroker(BrokerAdapter):
         self._kr_probe = kr[0].symbol if kr else "005930"
         self._us_probe = next(iter(self._exchange), "AAPL")
         self._exchange.setdefault(self._us_probe, "NASD")
+
+    def add_instrument(self, instrument: Instrument) -> None:
+        """목록(universe)에 없는 미국 종목의 거래소를 알려 준다(예: 비교용 SPY)."""
+        if instrument.market is Market.US and instrument.exchange:
+            self._exchange[instrument.symbol] = ORDER_EXCHANGE[instrument.exchange]
 
     # ---- BrokerAdapter ----
 

@@ -29,7 +29,10 @@ def test_cli_needs_kis_settings(monkeypatch, capsys):
     assert "KIS_APP_KEY" in capsys.readouterr().out
 
 
-def test_ignore_hours_only_with_fake(monkeypatch, capsys):
+def test_ignore_hours_only_with_fake_or_dry_run(monkeypatch, capsys):
     monkeypatch.setenv("BROKER", "kis")
     assert main(["--market", "KR", "--ignore-hours"]) == 2
-    assert "fake" in capsys.readouterr().out
+    assert "--dry-run" in capsys.readouterr().out
+    # 시험 실행이면 장 시간 검사를 끌 수 있다(여기서는 KIS 설정이 없어 설정 오류로 끝난다)
+    assert main(["--market", "KR", "--ignore-hours", "--dry-run"]) == 2
+    assert "KIS_APP_KEY" in capsys.readouterr().out

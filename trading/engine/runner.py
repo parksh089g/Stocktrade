@@ -15,7 +15,7 @@
 
 import logging
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 import pandas as pd
@@ -50,8 +50,9 @@ from trading.universe import Universe
 
 logger = logging.getLogger(__name__)
 
-# 이보다 오래된 일봉이면 시세가 멈춘 것으로 보고 그 종목을 건너뛴다(연휴 고려)
-MAX_BAR_AGE_DAYS = 7
+# 마지막 일봉 뒤로 빠진 거래일이 이보다 많으면 시세가 멈춘 것(거래정지 등)으로 보고 건너뛴다.
+# 달력 날짜가 아니라 거래일로 세야 긴 연휴(예: 2025년 추석 7일 휴장) 다음 날에도 정상 동작한다.
+MAX_MISSING_TRADING_DAYS = 2
 PAUSED_SKIP = "일시정지 중이라 주문하지 않았습니다(손절 매도만 나갑니다)"
 
 
@@ -227,9 +228,11 @@ class Engine:
                     report.warnings.append(f"{symbol}: 일봉이 없어 건너뜁니다")
                     continue
                 last_day = bars.index[-1].date()
-                if (today - last_day).days > MAX_BAR_AGE_DAYS:
+                missing = self._missing_trading_days(market, last_day, today)
+                if missing > MAX_MISSING_TRADING_DAYS:
                     report.warnings.append(
-                        f"{symbol}: 마지막 일봉({last_day})이 오래돼 건너뜁니다(거래정지 확인)"
+                        f"{symbol}: 마지막 일봉({last_day}) 뒤로 {missing}거래일치가 없어 "
+                        "건너뜁니다(거래정지 확인)"
                     )
                     continue
                 found = [
@@ -290,6 +293,14 @@ class Engine:
             report.warnings += recorded.warnings
 
     # ---- 도움 함수 ----
+
+    def _missing_trading_days(self, market: Market, last_day: date, today: date) -> int:
+        """last_day와 today 사이(둘 다 빼고)의 개장일 수."""
+        count, day = 0, last_day + timedelta(days=1)
+        while day < today and count <= MAX_MISSING_TRADING_DAYS:
+            count += self.broker.is_trading_day(market, day)
+            day += timedelta(days=1)
+        return count
 
     def _names(self, market: Market) -> dict[str, str]:
         return {i.symbol: i.name for i in self.universe.get(market, []) if i.name}

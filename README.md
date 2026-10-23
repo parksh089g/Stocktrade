@@ -22,6 +22,14 @@ uv run python -m trading.backtest --csv 005930.csv --market KR --strategy trend_
 CSV는 `date,open,high,low,close,volume` 컬럼이 있으면 된다. 신호는 다음 날 시가에 체결하고,
 수수료/세금은 `trading/backtest/simulator.py`의 `DEFAULT_COSTS`(대략값)를 쓴다.
 
+실제 시세(KIS, `data/bars/`에 저장해 다시 씀):
+
+```bash
+uv run python -m trading.backtest --source kis --days 1500               # 종목별
+uv run python -m trading.backtest --source kis --portfolio --days 1500   # 계좌 전체(실제 엔진 규칙)
+uv run python -m trading.backtest.compare                                # 개선안 비교(앞 기간에서 고르고 뒤 기간에서 확인)
+```
+
 ## 하루 실행 (지금은 fake 증권사)
 
 ```bash

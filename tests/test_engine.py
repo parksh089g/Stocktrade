@@ -407,8 +407,19 @@ def test_stale_bars_are_skipped():
     env.a.signals = {"005930": Side.BUY}
     report = env.run()
     assert report.orders == []
-    assert any("오래돼" in w for w in report.warnings)
+    assert any("거래일치가 없어" in w for w in report.warnings)
     assert env.a.seen == []
+
+
+def test_long_holiday_is_not_stale():
+    # 2025년 추석: 10/3~10/9 휴장 → 10/10 아침의 마지막 일봉은 10/2(달력으로 8일 전)
+    env = make_env(bars_end=date(2025, 10, 2))
+    env.clock.now = datetime(2025, 10, 10, 8, 40, tzinfo=KST)
+    env.broker.holidays.update(date(2025, 10, d) for d in (3, 6, 7, 8, 9))
+    env.a.signals = {"005930": Side.BUY}
+    report = env.run()
+    assert report.warnings == []
+    assert len(report.orders) == 1
 
 
 def test_todays_unfinished_bar_is_not_used():

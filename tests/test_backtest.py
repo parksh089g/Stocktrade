@@ -6,7 +6,7 @@ import pytest
 from trading.backtest.__main__ import main
 from trading.backtest.data import load_bars_csv
 from trading.backtest.simulator import Costs, max_drawdown, run_backtest
-from trading.brokers.fake import make_random_bars
+from trading.brokers.fake import FakeBroker, make_random_bars
 from trading.core.models import Market, Position, Side, Signal
 from trading.strategies import RsiRebound, TrendMA
 from trading.strategies.base import Strategy
@@ -151,3 +151,91 @@ def test_load_bars_csv(tmp_path):
     bad.write_text("open,high,low,close,volume\n1,1,1,1,1\n")
     with pytest.raises(ValueError, match="date"):
         load_bars_csv(bad)
+
+
+# ---- KIS 실제 일봉 ----
+
+
+def test_fetch_bars_cached(tmp_path):
+    from trading.backtest.data import fetch_bars_cached
+
+    class CountingBroker(FakeBroker):
+        calls = 0
+
+        def get_daily_bars(self, market, symbol, count):
+            CountingBroker.calls += 1
+            return super().get_daily_bars(market, symbol, count)
+
+    broker = CountingBroker()
+    broker.set_bars(Market.KR, "005930", make_random_bars(300, seed=1))
+
+    first, cached = fetch_bars_cached(broker, Market.KR, "005930", 200, cache_dir=tmp_path)
+    assert not cached and len(first) == 200
+    again, cached = fetch_bars_cached(broker, Market.KR, "005930", 150, cache_dir=tmp_path)
+    assert cached and len(again) == 150
+    assert CountingBroker.calls == 1
+    pd.testing.assert_frame_equal(again, first.tail(150), check_freq=False, check_names=False)
+
+    # 저장본보다 많이 원하거나 새로 받으라고 하면 다시 받는다
+    fetch_bars_cached(broker, Market.KR, "005930", 250, cache_dir=tmp_path)
+    fetch_bars_cached(broker, Market.KR, "005930", 100, cache_dir=tmp_path, refresh=True)
+    assert CountingBroker.calls == 3
+
+
+def test_cli_kis_source(tmp_path, monkeypatch, capsys):
+    from pathlib import Path
+
+    import trading.backtest.__main__ as cli
+    from trading.core.models import Instrument
+
+    universe_path = Path("config/universe.toml").resolve()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("UNIVERSE_PATH", str(universe_path))
+    broker = FakeBroker()
+    for i, symbol in enumerate(["005930", "000660"]):
+        broker.set_bars(Market.KR, symbol, make_random_bars(300, seed=i))
+    monkeypatch.setattr(cli, "build_kis_broker", lambda settings, universe: broker)
+    monkeypatch.setattr(
+        cli,
+        "load_universe",
+        lambda path: {
+            Market.KR: [
+                Instrument(market=Market.KR, symbol="005930", name="삼성전자"),
+                Instrument(market=Market.KR, symbol="000660", name="SK하이닉스"),
+            ],
+            Market.US: [],
+        },
+    )
+
+    assert cli.main(["--source", "kis", "--market", "KR", "--days", "250"]) == 0
+    out = capsys.readouterr().out
+    assert "(trend_ma)" in out and "(rsi_rebound)" in out
+    assert "삼성전자" in out and "평균" in out
+    assert (tmp_path / "data/bars/KR_005930.csv").exists()
+
+
+def test_cli_portfolio(tmp_path, monkeypatch, capsys):
+    import trading.backtest.__main__ as cli
+    from trading.core.models import Instrument
+
+    monkeypatch.chdir(tmp_path)
+    broker = FakeBroker()
+    for i, symbol in enumerate(["005930", "000660", "069500"]):
+        broker.set_bars(Market.KR, symbol, make_random_bars(300, start_price=50_000, seed=i))
+    monkeypatch.setattr(cli, "build_kis_broker", lambda settings, universe: broker)
+    monkeypatch.setattr(
+        cli,
+        "load_universe",
+        lambda path: {
+            Market.KR: [
+                Instrument(market=Market.KR, symbol="005930"),
+                Instrument(market=Market.KR, symbol="000660"),
+            ],
+            Market.US: [],
+        },
+    )
+    assert cli.main(["--source", "kis", "--portfolio", "--market", "KR", "--days", "300"]) == 0
+    out = capsys.readouterr().out
+    assert "[국내 계좌]" in out
+    assert "KODEX 200 그냥 보유" in out
+    assert "전략별 손익" in out

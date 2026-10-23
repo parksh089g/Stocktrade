@@ -212,3 +212,33 @@ def format_summary(result: BacktestResult) -> str:
         f"  같은 기간 그냥 보유했다면 {m.buy_and_hold_return:+.2%}",
     ]
     return "\n".join(lines)
+
+
+def format_table(results: list[BacktestResult], names: dict[str, str] | None = None) -> str:
+    """여러 종목 결과를 표로. 마지막 줄은 종목 평균(같은 금액씩 나눠 넣었다고 본 단순 평균)."""
+    names = names or {}
+    header = (
+        f"{'종목':<8} {'총수익':>8} {'연환산':>8} {'최대낙폭':>8} {'거래':>4} {'승률':>5} "
+        f"{'보유비중':>7} {'그냥보유':>8}  이름"
+    )
+    lines = [header]
+    for r in results:
+        m = r.metrics
+        lines.append(
+            f"{r.symbol:<8} {m.total_return:>+8.1%} {m.cagr:>+8.1%} {m.max_drawdown:>8.1%} "
+            f"{m.num_trades:>4} {m.win_rate:>5.0%} {m.exposure:>7.0%} "
+            f"{m.buy_and_hold_return:>+8.1%}  {names.get(r.symbol, '')}"
+        )
+    if len(results) > 1:
+        n = len(results)
+
+        def avg(f):
+            return sum(f(r.metrics) for r in results) / n
+
+        lines.append(
+            f"{'평균':<8} {avg(lambda m: m.total_return):>+8.1%} {avg(lambda m: m.cagr):>+8.1%} "
+            f"{avg(lambda m: m.max_drawdown):>8.1%} {avg(lambda m: m.num_trades):>4.0f} "
+            f"{avg(lambda m: m.win_rate):>5.0%} {avg(lambda m: m.exposure):>7.0%} "
+            f"{avg(lambda m: m.buy_and_hold_return):>+8.1%}"
+        )
+    return "\n".join(lines)
