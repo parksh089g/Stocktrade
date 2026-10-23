@@ -3,7 +3,7 @@
 금액과 가격은 Decimal, 수량은 정수 주식 수, 시간은 UTC로 둔다.
 """
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
 from typing import Annotated
@@ -33,6 +33,10 @@ class Market(StrEnum):
     @property
     def timezone(self) -> ZoneInfo:
         return KST if self is Market.KR else NEW_YORK
+
+    def format_price(self, value: Decimal | float) -> str:
+        """알림/로그용 가격 표기. 예: KR 70,000 / US 180.50"""
+        return f"{value:,.0f}" if self is Market.KR else f"{value:,.2f}"
 
 
 class Side(StrEnum):
@@ -65,6 +69,7 @@ class Signal(_Frozen):
     side: Side
     strategy: str
     price: Price  # 신호 기준 가격(보통 마지막 종가)
+    bar_date: date  # 신호를 낸 일봉 날짜(그 시장 현지 날짜)
     reason: str
     created_at: UtcDatetime = Field(default_factory=now_utc)
 

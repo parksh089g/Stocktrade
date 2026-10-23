@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta, timezone
 from decimal import Decimal
 
 import pandas as pd
@@ -24,6 +24,11 @@ def order(**overrides) -> Order:
 def test_market_currency():
     assert Market.KR.currency == "KRW"
     assert Market.US.currency == "USD"
+
+
+def test_market_format_price():
+    assert Market.KR.format_price(Decimal("70000")) == "70,000"
+    assert Market.US.format_price(1234.5) == "1,234.50"
 
 
 def test_limit_order_requires_price():
@@ -56,6 +61,7 @@ def signal(**overrides) -> Signal:
         "side": Side.BUY,
         "strategy": "rsi_rebound",
         "price": "180.25",
+        "bar_date": date(2026, 10, 22),
         "reason": "RSI 28",
     }
     return Signal(**(fields | overrides))
