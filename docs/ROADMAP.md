@@ -9,10 +9,10 @@
 - [ ] M5. KIS 어댑터: 토큰 24시간 캐시, 국내 주문/조회, 해외 지정가 주문, 해외 조회 초당 1회 제한, 모의투자 키로 확인
   - 코드와 테스트 완료(2026-10-23). 모의투자 연결 확인: 토큰, 국내/미국 잔고·보유·시세·일봉·주문내역 조회 성공.
     주문 형식은 장 시간 거부 응답으로 확인. 장중 주문 접수 확인이 남았다.
-- [ ] M6. GitHub Actions: trade-kr.yml, trade-us.yml, Secrets 연결, 수동 실행(workflow_dispatch)
-  - 코드 완료(2026-10-23): 워크플로(국내/미국/공통 엔진/CI), Actions용 KIS 토큰 캐시(Supabase에 암호화),
-    예약 실행 스위치(SCHEDULE_ENABLED), 실전은 변수 TRADING_MODE=live + main 브랜치일 때만.
-    남은 일: Supabase 준비, Secrets 등록, Actions에서 손으로 시험 실행 확인.
+- [x] M6. GitHub Actions: trade-kr.yml, trade-us.yml, Secrets 연결, 수동 실행(workflow_dispatch)
+  - 워크플로(국내/미국/공통 엔진/CI), Actions용 KIS 토큰 캐시(Supabase에 암호화), 예약 실행 스위치
+    (SCHEDULE_ENABLED), 실전은 변수 TRADING_MODE=live + main 브랜치일 때만.
+  - 2026-10-23 확인: Supabase 연결, Actions 시험 실행(국내/미국), 두 번째 실행이 Supabase의 토큰을 다시 씀.
 - [ ] M7. 웹앱: Vite + TypeScript PWA, Supabase Auth 로그인, 포지션/주문/알림함 확인, 일시정지 스위치, 푸시 구독, Cloudflare Pages 배포
 
 실전(live) 전환은 M7까지 끝나고 폰에서 알림이 오는 것을 확인한 뒤에 한다.
