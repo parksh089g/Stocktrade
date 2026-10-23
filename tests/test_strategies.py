@@ -63,10 +63,24 @@ def test_trend_holds_while_above(trend: TrendMA):
 
 def test_trend_sells_when_short_below_long(trend: TrendMA):
     bars = bars_from_closes([10, 11, 12, 13, 14, 15, 16, 17, 9])
-    signal = trend.evaluate(KR, "005930", bars, position("trend_ma", 15, bars=bars))
+    # 평균단가 9.5 → 손절가 8.55, 종가 9는 손절선 위
+    signal = trend.evaluate(KR, "005930", bars, position("trend_ma", 9.5, bars=bars))
     assert signal is not None
     assert signal.side is Side.SELL
     assert "데드크로스" in signal.reason
+    assert not signal.stop_loss
+
+
+def test_trend_stop_loss_even_while_uptrend(trend: TrendMA):
+    bars = bars_from_closes(GOLDEN)  # 단기선이 장기선 위(추세 유지 중)
+    # 평균단가 31 → 손절가 27.9, 종가 27
+    signal = trend.evaluate(KR, "005930", bars, position("trend_ma", 31, bars=bars))
+    assert signal is not None
+    assert signal.side is Side.SELL
+    assert "손절" in signal.reason
+    assert signal.stop_loss
+    # 평균단가 29.9 → 손절가 26.91, 종가 27은 손절선 위라 그대로 보유
+    assert trend.evaluate(KR, "005930", bars, position("trend_ma", 29.9, bars=bars)) is None
 
 
 def test_trend_no_signal_with_too_few_bars(trend: TrendMA):
@@ -79,6 +93,8 @@ def test_trend_rejects_bad_params():
         TrendMA(short=60, long=20)
     with pytest.raises(ValueError):
         TrendMA(entry_window=0)
+    with pytest.raises(ValueError):
+        TrendMA(stop_loss=0)
 
 
 def test_default_lookbacks_fit_one_kis_request():
