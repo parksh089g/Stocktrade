@@ -1,0 +1,26 @@
+# 비밀값: 절대 커밋하지 않는다
+.env
+.env.*
+!.env.example
+
+# KIS 토큰 캐시
+.cache/
+*.token.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+
+# 웹앱
+node_modules/
+webapp/dist/
+
+# 기타
+.DS_Store
+*.log
