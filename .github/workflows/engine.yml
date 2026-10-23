@@ -1,0 +1,65 @@
+# 엔진 하루 실행. trade-kr.yml, trade-us.yml이 부른다. 설정 방법은 docs/SETUP.md 4장.
+#
+# 모드는 저장소 변수 TRADING_MODE로 정한다. 값이 live일 때만 실전 키로 실전 계좌에 주문하고,
+# 변수가 없거나 다른 값이면 모의투자 키로 모의투자 계좌를 쓴다. 실전은 main 브랜치 코드로만 돈다.
+name: engine
+
+on:
+  workflow_call:
+    inputs:
+      market:
+        type: string
+        required: true
+      dry_run:
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      BROKER: kis
+      MARKET: ${{ inputs.market }}
+      # 시험 실행은 장 시간과 상관없이 시세, 신호, 주문 계획까지 계산하고 주문은 내지 않는다
+      DRY_RUN_ARGS: ${{ inputs.dry_run && '--dry-run --ignore-hours' || '' }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+      VAPID_SUBJECT: ${{ secrets.VAPID_SUBJECT }}
+      MAX_DAILY_BUY_KRW: ${{ vars.MAX_DAILY_BUY_KRW }}
+      MAX_DAILY_BUY_USD: ${{ vars.MAX_DAILY_BUY_USD }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - name: 설치
+        run: uv sync --locked --no-dev
+
+      - name: 실행 (모의투자)
+        if: vars.TRADING_MODE != 'live'
+        env:
+          TRADING_MODE: paper
+          KIS_APP_KEY: ${{ secrets.KIS_PAPER_APP_KEY }}
+          KIS_APP_SECRET: ${{ secrets.KIS_PAPER_APP_SECRET }}
+          KIS_ACCOUNT_NO: ${{ secrets.KIS_PAPER_ACCOUNT_NO }}
+        run: uv run --no-sync python -m trading.engine --market "$MARKET" $DRY_RUN_ARGS
+
+      - name: 실행 (실전)
+        if: vars.TRADING_MODE == 'live' && github.ref == 'refs/heads/main'
+        env:
+          TRADING_MODE: live
+          KIS_APP_KEY: ${{ secrets.KIS_LIVE_APP_KEY }}
+          KIS_APP_SECRET: ${{ secrets.KIS_LIVE_APP_SECRET }}
+          KIS_ACCOUNT_NO: ${{ secrets.KIS_LIVE_ACCOUNT_NO }}
+        run: uv run --no-sync python -m trading.engine --market "$MARKET" $DRY_RUN_ARGS
+
+      - name: 실전은 main 브랜치에서만
+        if: vars.TRADING_MODE == 'live' && github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::실전(live) 모드는 main 브랜치에서만 실행합니다"
+          exit 1

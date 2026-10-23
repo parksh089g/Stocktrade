@@ -7,7 +7,7 @@ import pandas as pd
 from trading.brokers.base import BrokerAdapter
 from trading.brokers.fake import make_demo_broker
 from trading.brokers.kis import KisBroker
-from trading.brokers.kis_client import FileTokenCache, KisClient
+from trading.brokers.kis_client import EncryptedTokenCache, FileTokenCache, KisClient, TokenCache
 from trading.config import Settings
 from trading.core.clock import now_utc, trading_date
 from trading.core.models import Market
@@ -49,12 +49,35 @@ def build_kis_broker(settings: Settings, universe: Universe) -> KisBroker:
         app_key=settings.kis_app_key.get_secret_value(),
         app_secret=settings.kis_app_secret.get_secret_value(),
         paper=not settings.is_live,
-        token_cache=FileTokenCache(TOKEN_DIR / f"kis_token_{settings.trading_mode}.json"),
+        token_cache=build_token_cache(settings),
     )
     try:
         return KisBroker(client, settings.kis_account_no.get_secret_value(), universe)
     except ValueError as e:
         raise SetupError(str(e)) from e
+
+
+def build_token_cache(settings: Settings) -> TokenCache:
+    """KIS 토큰 캐시. 로컬은 .cache/ 파일을 쓴다.
+
+    GitHub Actions는 실행마다 새 컴퓨터라 Supabase에 암호화해 둔다.
+    Supabase 설정이 없으면 Actions에서도 파일을 쓴다(그 실행 안에서만 다시 쓴다).
+    """
+    name = f"kis_token_{settings.trading_mode}"
+    secret = settings.kis_app_secret
+    if (
+        settings.github_actions
+        and settings.supabase_url
+        and settings.supabase_service_key
+        and secret
+    ):
+        store = SupabaseStore(
+            settings.supabase_url,
+            settings.supabase_service_key.get_secret_value(),
+            settings.trading_mode,
+        )
+        return EncryptedTokenCache(store, name, secret.get_secret_value())
+    return FileTokenCache(TOKEN_DIR / f"{name}.json")
 
 
 def build_store(settings: Settings, *, dry_run: bool = False) -> Store:

@@ -173,6 +173,28 @@ class SupabaseStore(Store):
             prefer="return=minimal",
         )
 
+    # ---- 엔진 캐시 ----
+
+    def get_cache(self, name: str) -> str | None:
+        rows = self._request(
+            "GET", "engine_cache", params={"select": "value", "name": f"eq.{name}"}
+        )
+        return str(rows[0]["value"]) if rows else None
+
+    def put_cache(self, name: str, value: str) -> None:
+        self._request(
+            "POST",
+            "engine_cache",
+            params={"on_conflict": "name"},
+            body={"name": name, "value": value},
+            prefer=_UPSERT,
+        )
+
+    def delete_cache(self, name: str) -> None:
+        self._request(
+            "DELETE", "engine_cache", params={"name": f"eq.{name}"}, prefer="return=minimal"
+        )
+
     # ---- 내부 ----
 
     def _filter(self, market: Market) -> dict[str, str]:

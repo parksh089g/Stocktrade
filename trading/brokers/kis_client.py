@@ -13,6 +13,7 @@
   접수됐는지 알 수 없어 중복 주문이 될 수 있기 때문이다.
 """
 
+import base64
 import hashlib
 import json
 import logging
@@ -25,6 +26,9 @@ from pathlib import Path
 from typing import Any, Protocol
 
 import httpx
+from cryptography.fernet import Fernet, InvalidToken
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from trading.brokers.base import BrokerError
 from trading.core.clock import KST, now_utc
@@ -70,35 +74,100 @@ class TokenCache(Protocol):
 
 
 class FileTokenCache:
-    """로컬 파일 캐시(.cache/는 git에 올라가지 않는다). GitHub Actions용 캐시는 M6에서 붙인다."""
+    """로컬 파일 캐시(.cache/는 git에 올라가지 않는다)."""
 
     def __init__(self, path: Path) -> None:
         self.path = path
 
     def load(self, key_id: str) -> CachedToken | None:
         try:
-            data = json.loads(self.path.read_text())
-        except (OSError, ValueError):
+            return _token_from_json(self.path.read_text(), key_id)
+        except OSError:
             return None
-        if data.get("key_id") != key_id:
-            return None
-        return CachedToken(data["token"], datetime.fromisoformat(data["expires_at"]))
 
     def save(self, key_id: str, token: CachedToken) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {
-            "key_id": key_id,
-            "token": token.token,
-            "expires_at": token.expires_at.isoformat(),
-        }
         # 본인만 읽을 수 있게 만든다
         fd = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w") as f:
-            json.dump(payload, f)
+            f.write(_token_to_json(key_id, token))
 
     def clear(self, key_id: str) -> None:
         if self.load(key_id) is not None:
             self.path.unlink(missing_ok=True)
+
+
+class CacheStore(Protocol):
+    """토큰을 맡길 원격 저장소. 엔진 저장소(Store)가 이 모양을 갖췄다."""
+
+    def get_cache(self, name: str) -> str | None: ...
+
+    def put_cache(self, name: str, value: str) -> None: ...
+
+    def delete_cache(self, name: str) -> None: ...
+
+
+class EncryptedTokenCache:
+    """GitHub Actions용 캐시. 실행마다 새 컴퓨터라 파일이 남지 않아 원격 저장소(Supabase)에 둔다.
+
+    토큰은 앱 시크릿에서 만든 키로 암호화한다. 저장소 내용이 새어도 앱 시크릿 없이는 쓸 수 없고,
+    앱 시크릿이 있으면 어차피 토큰을 새로 받을 수 있다.
+    저장소 오류는 경고만 남기고 넘어간다(캐시 때문에 실행이 멈추지 않고 토큰을 새로 받는다).
+    """
+
+    def __init__(self, store: CacheStore, name: str, app_secret: str) -> None:
+        self.store = store
+        self.name = name
+        key = HKDF(
+            algorithm=hashes.SHA256(), length=32, salt=None, info=b"stocktrade kis token cache"
+        ).derive(app_secret.encode())
+        self._fernet = Fernet(base64.urlsafe_b64encode(key))
+
+    def load(self, key_id: str) -> CachedToken | None:
+        try:
+            blob = self.store.get_cache(self.name)
+        except Exception as e:
+            logger.warning("토큰 캐시를 읽지 못해 새로 발급받습니다 (%s)", type(e).__name__)
+            return None
+        if blob is None:
+            return None
+        try:
+            text = self._fernet.decrypt(blob.encode()).decode()
+        except (InvalidToken, ValueError):
+            # 앱 시크릿을 바꿨으면 예전 토큰은 풀리지 않는다
+            logger.warning("토큰 캐시를 풀지 못해 새로 발급받습니다")
+            return None
+        return _token_from_json(text, key_id)
+
+    def save(self, key_id: str, token: CachedToken) -> None:
+        blob = self._fernet.encrypt(_token_to_json(key_id, token).encode()).decode()
+        try:
+            self.store.put_cache(self.name, blob)
+        except Exception as e:
+            logger.warning("토큰 캐시를 저장하지 못했습니다 (%s)", type(e).__name__)
+
+    def clear(self, key_id: str) -> None:
+        try:
+            self.store.delete_cache(self.name)
+        except Exception as e:
+            logger.warning("토큰 캐시를 지우지 못했습니다 (%s)", type(e).__name__)
+
+
+def _token_to_json(key_id: str, token: CachedToken) -> str:
+    return json.dumps(
+        {"key_id": key_id, "token": token.token, "expires_at": token.expires_at.isoformat()}
+    )
+
+
+def _token_from_json(text: str, key_id: str) -> CachedToken | None:
+    """다른 앱키로 받은 토큰이거나 내용이 깨졌으면 None."""
+    try:
+        data = json.loads(text)
+        if data.get("key_id") != key_id:
+            return None
+        return CachedToken(data["token"], datetime.fromisoformat(data["expires_at"]))
+    except (ValueError, KeyError, TypeError, AttributeError):
+        return None
 
 
 class KisClient:

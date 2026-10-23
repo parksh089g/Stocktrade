@@ -27,6 +27,7 @@ class FakePostgrest:
             "orders": [],
             "runs": [],
             "push_subscriptions": [],
+            "engine_cache": [],
         }
         self.requests: list[httpx.Request] = []
         # 앞에서부터 하나씩 꺼내 쓴다: 숫자면 그 상태 코드로 응답, 예외면 던진다

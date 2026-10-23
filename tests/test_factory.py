@@ -1,8 +1,9 @@
 import pytest
 
 from tests.fake_postgrest import FakePostgrest
+from trading.brokers.kis_client import EncryptedTokenCache, FileTokenCache
 from trading.config import Settings
-from trading.engine.factory import SetupError, build_notifier, build_store
+from trading.engine.factory import SetupError, build_notifier, build_store, build_token_cache
 from trading.notify.base import ConsoleNotifier, MultiNotifier
 from trading.notify.webpush import WebPushNotifier
 from trading.storage import check
@@ -45,6 +46,30 @@ def test_kis_uses_supabase_and_web_push():
 def test_kis_without_vapid_key_only_prints():
     s = settings(broker="kis", supabase_url="https://x.supabase.co", supabase_service_key="k")
     assert isinstance(build_notifier(s, build_store(s)), ConsoleNotifier)
+
+
+# ---- KIS 토큰 캐시 ----
+
+SUPABASE = {"supabase_url": "https://x.supabase.co", "supabase_service_key": "sb_secret_x"}
+
+
+def test_token_cache_is_a_file_on_this_pc():
+    cache = build_token_cache(settings(broker="kis", kis_app_secret="s", **SUPABASE))
+    assert isinstance(cache, FileTokenCache)
+    assert cache.path.name == "kis_token_paper.json"
+
+
+def test_token_cache_is_encrypted_in_supabase_on_github_actions():
+    s = settings(broker="kis", kis_app_secret="s", github_actions=True, **SUPABASE)
+    cache = build_token_cache(s)
+    assert isinstance(cache, EncryptedTokenCache)
+    assert cache.name == "kis_token_paper"
+    assert isinstance(cache.store, SupabaseStore)
+
+
+def test_token_cache_on_github_actions_without_supabase_is_a_file():
+    s = settings(broker="kis", kis_app_secret="s", github_actions=True)
+    assert isinstance(build_token_cache(s), FileTokenCache)
 
 
 # ---- Supabase 연결 확인 도구 ----

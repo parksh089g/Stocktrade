@@ -82,6 +82,14 @@ create table if not exists public.push_subscriptions (
   created_at timestamptz not null default now()
 );
 
+-- 엔진만 쓰는 값(GitHub Actions 실행 사이에 남겨 둘 KIS 토큰 등). 토큰은 앱 시크릿으로 암호화해서 넣는다.
+-- 정책이 없어 웹앱에서는 볼 수 없다
+create table if not exists public.engine_cache (
+  name text primary key,
+  value text not null,
+  updated_at timestamptz not null default now()
+);
+
 -- 웹앱을 쓸 수 있는 사람. 웹앱에서 처음 가입한 뒤 대시보드에서 직접 한 줄 넣는다
 create table if not exists public.owners (
   user_id uuid primary key references auth.users (id) on delete cascade
@@ -110,6 +118,8 @@ create or replace trigger positions_touch before update on public.positions
   for each row execute function public.touch_updated_at();
 create or replace trigger orders_touch before update on public.orders
   for each row execute function public.touch_updated_at();
+create or replace trigger engine_cache_touch before update on public.engine_cache
+  for each row execute function public.touch_updated_at();
 
 -- ---------------------------------------------------------------- 접근 권한(RLS)
 
@@ -119,6 +129,7 @@ alter table public.orders enable row level security;
 alter table public.runs enable row level security;
 alter table public.push_subscriptions enable row level security;
 alter table public.owners enable row level security;  -- 정책 없음: 웹앱에서는 볼 수 없다
+alter table public.engine_cache enable row level security;  -- 정책 없음: 웹앱에서는 볼 수 없다
 
 drop policy if exists "owner read" on public.trading_switch;
 create policy "owner read" on public.trading_switch

@@ -1,6 +1,6 @@
 """기록 저장소 인터페이스. 운영은 Supabase(supabase.py), 테스트와 로컬은 메모리(memory.py).
 
-저장하는 것: 일시정지 스위치, 전략별 보유분, 주문 기록, 실행 기록, 웹 푸시 구독.
+저장하는 것: 일시정지 스위치, 전략별 보유분, 주문 기록, 실행 기록, 웹 푸시 구독, 엔진 캐시.
 보유분과 주문은 모의투자/실전 계좌가 섞이지 않도록 모드별로 따로 둔다.
 """
 
@@ -70,3 +70,13 @@ class Store(ABC):
     @abstractmethod
     def delete_push_subscription(self, endpoint: str) -> None:
         """만료된 구독을 지운다."""
+
+    @abstractmethod
+    def get_cache(self, name: str) -> str | None:
+        """엔진만 쓰는 값(예: 암호화한 증권사 토큰). 웹앱에서는 보이지 않는다."""
+
+    @abstractmethod
+    def put_cache(self, name: str, value: str) -> None: ...
+
+    @abstractmethod
+    def delete_cache(self, name: str) -> None: ...

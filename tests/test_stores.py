@@ -92,6 +92,17 @@ def test_pause_switch(store):
     assert not store.get_pause().paused
 
 
+def test_engine_cache(store):
+    assert store.get_cache("kis_token_paper") is None
+    store.put_cache("kis_token_paper", "a")
+    store.put_cache("kis_token_paper", "b")  # 덮어쓴다
+    store.put_cache("kis_token_live", "c")
+    assert store.get_cache("kis_token_paper") == "b"
+    store.delete_cache("kis_token_paper")
+    assert store.get_cache("kis_token_paper") is None
+    assert store.get_cache("kis_token_live") == "c"
+
+
 def test_positions_roundtrip_keeps_exact_decimal(store):
     store.upsert_position(position())
     store.upsert_position(position(symbol="AAPL", market=US, avg="180.5"))

@@ -32,7 +32,13 @@ uv run python -m trading.backtest.compare                                # 개�
 
 시험 결과와 결론은 [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md)에 남긴다.
 
-## 하루 실행 (지금은 fake 증권사)
+## 하루 실행
+
+GitHub Actions가 평일 하루 한 번씩 돌린다(`.github/workflows/trade-kr.yml`, `trade-us.yml`,
+공통 단계는 `engine.yml`). 준비는 [docs/SETUP.md](docs/SETUP.md) 4장. 모드는 저장소 변수 `TRADING_MODE`로
+정하고, 없으면 모의투자다. 올릴 때마다 `ci.yml`이 테스트와 린트를 돌린다.
+
+로컬에서는 fake 증권사로 흐름을 확인한다.
 
 ```bash
 uv run python -m trading.engine --market KR

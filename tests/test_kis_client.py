@@ -8,10 +8,12 @@ from trading.brokers.base import BrokerError
 from trading.brokers.kis_client import (
     PAPER_URL,
     CachedToken,
+    EncryptedTokenCache,
     FileTokenCache,
     KisApiError,
     KisClient,
 )
+from trading.storage.memory import MemoryStore
 
 NOW = datetime(2026, 10, 25, 23, 40, tzinfo=UTC)  # 한국 10/26 08:40
 PRICE = "/uapi/domestic-stock/v1/quotations/inquire-price"
@@ -31,13 +33,13 @@ class FakeTime:
         self.now += seconds
 
 
-def make(fake: FakeKis, tmp_path, *, time: FakeTime | None = None, **kw) -> KisClient:
+def make(fake: FakeKis, tmp_path, *, time: FakeTime | None = None, token_cache=None, **kw):
     time = time or FakeTime()
     return KisClient(
         app_key=APP_KEY,
         app_secret=APP_SECRET,
         paper=fake.paper,
-        token_cache=FileTokenCache(tmp_path / "token.json"),
+        token_cache=token_cache or FileTokenCache(tmp_path / "token.json"),
         transport=fake.transport,
         clock=lambda: NOW,
         sleep=time.sleep,
@@ -113,6 +115,55 @@ def test_token_issue_failure(tmp_path):
     ]
     with pytest.raises(BrokerError, match=r"토큰 발급 실패.*EGW00133"):
         price(make(fake, tmp_path))
+
+
+# ---- GitHub Actions용 캐시(저장소에 암호화해 둔다) ----
+
+
+def test_token_is_shared_between_runs_through_store(tmp_path):
+    store = MemoryStore()
+    fake = FakeKis()
+    price(make(fake, tmp_path / "a", token_cache=EncryptedTokenCache(store, "t", APP_SECRET)))
+    # 다음 실행은 새 컴퓨터(파일 없음)지만 저장소의 토큰을 다시 쓴다
+    price(make(fake, tmp_path / "b", token_cache=EncryptedTokenCache(store, "t", APP_SECRET)))
+    assert fake.tokens_issued == 1
+    saved = store.cache["t"]
+    assert fake.token not in saved and APP_KEY not in saved  # 암호화돼 있다
+
+
+def test_encrypted_token_needs_same_app_secret():
+    store = MemoryStore()
+    token = CachedToken("tok", datetime(2026, 10, 27, tzinfo=UTC))
+    EncryptedTokenCache(store, "t", APP_SECRET).save("id", token)
+    assert EncryptedTokenCache(store, "t", APP_SECRET).load("id") == token
+    assert EncryptedTokenCache(store, "t", "other-secret").load("id") is None
+    assert EncryptedTokenCache(store, "t", APP_SECRET).load("other-id") is None
+    store.cache["t"] = "broken"
+    assert EncryptedTokenCache(store, "t", APP_SECRET).load("id") is None
+
+
+def test_store_cache_errors_do_not_stop_the_run(tmp_path):
+    store = MemoryStore()
+    store.fail_on = {"get_cache", "put_cache", "delete_cache"}
+    fake = FakeKis()
+    client = make(fake, tmp_path, token_cache=EncryptedTokenCache(store, "t", APP_SECRET))
+    price(client)
+    fake.reject_token = True
+    fake.token = "fake-token-0002"
+    price(client)  # 지우기도 실패하지만 새로 받아 계속한다
+    assert fake.tokens_issued == 2
+
+
+def test_renewed_token_replaces_store_cache(tmp_path):
+    store = MemoryStore()
+    fake = FakeKis()
+    cache = EncryptedTokenCache(store, "t", APP_SECRET)
+    client = make(fake, tmp_path, token_cache=cache)
+    price(client)
+    fake.reject_token = True
+    fake.token = "fake-token-0002"
+    price(client)
+    assert cache.load(client._key_id).token == "fake-token-0002"
 
 
 # ---- 헤더, 오류, 재시도 ----

@@ -3,7 +3,7 @@
   uv run python -m trading.storage.check
 
 .env의 SUPABASE_URL, SUPABASE_SERVICE_KEY로 접속해 표가 다 있는지, 읽고 쓸 수 있는지 본다.
-쓰기 확인용 보유분 한 줄을 넣었다가 바로 지운다(종목 __CHECK__).
+쓰기 확인용 보유분과 엔진 캐시 한 줄씩을 넣었다가 바로 지운다(이름 __CHECK__).
 """
 
 import sys
@@ -51,6 +51,10 @@ def main() -> int:
             )
         )
         store.delete_position(Market.KR, CHECK_SYMBOL, CHECK_STRATEGY)
+        store.put_cache(CHECK_SYMBOL, "ok")
+        if store.get_cache(CHECK_SYMBOL) != "ok":
+            raise StoreError("엔진 캐시(engine_cache)에 쓴 값을 다시 읽지 못했습니다")
+        store.delete_cache(CHECK_SYMBOL)
         print("쓰기/지우기 확인")
     except StoreError as e:
         print(f"실패: {e}")

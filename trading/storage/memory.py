@@ -16,6 +16,7 @@ class MemoryStore(Store):
         self.runs: list[RunReport] = []
         self.summaries: list[str] = []
         self.subscriptions: dict[str, PushSubscription] = {}
+        self.cache: dict[str, str] = {}
         # 메서드 이름을 넣으면 그 메서드가 StoreError를 던진다 (오류 상황 테스트용)
         self.fail_on: set[str] = set()
 
@@ -80,3 +81,15 @@ class MemoryStore(Store):
     def delete_push_subscription(self, endpoint: str) -> None:
         self._maybe_fail("delete_push_subscription")
         self.subscriptions.pop(endpoint, None)
+
+    def get_cache(self, name: str) -> str | None:
+        self._maybe_fail("get_cache")
+        return self.cache.get(name)
+
+    def put_cache(self, name: str, value: str) -> None:
+        self._maybe_fail("put_cache")
+        self.cache[name] = value
+
+    def delete_cache(self, name: str) -> None:
+        self._maybe_fail("delete_cache")
+        self.cache.pop(name, None)
