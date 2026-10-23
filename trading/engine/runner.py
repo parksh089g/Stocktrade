@@ -45,7 +45,7 @@ from trading.notify.base import Notification, Notifier
 from trading.risk.config import RiskConfig
 from trading.risk.planner import PlannedOrder, plan_orders
 from trading.storage.base import Store
-from trading.strategies.base import Strategy
+from trading.strategies.base import NO_CONTEXT, MarketContext, Strategy
 from trading.universe import Universe
 
 logger = logging.getLogger(__name__)
@@ -88,6 +88,7 @@ class Engine:
         secrets: Iterable[str] = (),
         check_market_hours: bool = True,
         dry_run: bool = False,
+        index_symbols: Mapping[Market, str] | None = None,
         clock: Callable[[], datetime] = now_utc,
     ) -> None:
         if not strategies:
@@ -103,6 +104,8 @@ class Engine:
         self.secrets = list(secrets)
         self.check_market_hours = check_market_hours
         self.dry_run = dry_run
+        # 시장 지수(ETF) 종목. 주면 그 일봉을 MarketContext로 전략에 함께 넘긴다.
+        self.index_symbols = dict(index_symbols or {})
         self.clock = clock
 
     def run(self, market: Market) -> RunReport:
@@ -214,6 +217,7 @@ class Engine:
         held_only = list(dict.fromkeys(p.symbol for p in positions if p.symbol not in in_universe))
         # 오늘 봉이 섞여 들어와도 빼고 lookback개가 남도록 하나 더 받는다
         count = max(s.lookback for s in self.strategies) + 1
+        context = self._market_context(market, today, count, report)
 
         signals: list[Signal] = []
         prices: dict[str, Decimal] = {}
@@ -238,7 +242,11 @@ class Engine:
                 found = [
                     sig
                     for s in strategies
-                    if (sig := s.evaluate(market, symbol, bars, pos_by_key.get((symbol, s.id))))
+                    if (
+                        sig := s.evaluate(
+                            market, symbol, bars, pos_by_key.get((symbol, s.id)), context
+                        )
+                    )
                 ]
             except Exception as e:
                 logger.exception("%s 신호 계산 실패", symbol)
@@ -293,6 +301,25 @@ class Engine:
             report.warnings += recorded.warnings
 
     # ---- 도움 함수 ----
+
+    def _market_context(
+        self, market: Market, today: date, count: int, report: RunReport
+    ) -> MarketContext:
+        symbol = self.index_symbols.get(market)
+        if symbol is None:
+            return NO_CONTEXT
+        try:
+            bars = self.broker.get_daily_bars(market, symbol, count)
+        except Exception as e:
+            logger.exception("시장 지수 일봉 실패")
+            report.warnings.append(
+                self._clean(
+                    f"시장 지수({symbol}) 일봉 오류로 시장 필터를 쓰는 전략은 새로 사지 않습니다 "
+                    f"({type(e).__name__}: {e})"
+                )
+            )
+            return MarketContext(index_bars=None)
+        return MarketContext(index_bars=bars[bars.index < pd.Timestamp(today)])
 
     def _missing_trading_days(self, market: Market, last_day: date, today: date) -> int:
         """last_day와 today 사이(둘 다 빼고)의 개장일 수."""

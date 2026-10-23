@@ -41,13 +41,15 @@ class Scripted(Strategy):
         self.signals: dict[str, Side] = {}
         self.stop_loss: set[str] = set()  # 여기 있는 종목의 매도 신호는 손절로 낸다
         self.seen: list[tuple[str, date, Position | None]] = []
+        self.contexts: list = []
 
     @property
     def lookback(self) -> int:
         return self._lookback
 
-    def _evaluate(self, market: Market, symbol, bars, position) -> Signal | None:
+    def _evaluate(self, market: Market, symbol, bars, position, context=None) -> Signal | None:
         self.seen.append((symbol, bars.index[-1].date(), position))
+        self.contexts.append(context)
         side = self.signals.get(symbol)
         if side is None:
             return None

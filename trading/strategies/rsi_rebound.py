@@ -11,7 +11,7 @@ import pandas as pd
 
 from trading.core.clock import trading_date
 from trading.core.models import Market, Position, Side, Signal
-from trading.strategies.base import Strategy
+from trading.strategies.base import MarketContext, Strategy
 from trading.strategies.indicators import rsi
 
 
@@ -46,7 +46,12 @@ class RsiRebound(Strategy):
         return self.period * 7
 
     def _evaluate(
-        self, market: Market, symbol: str, bars: pd.DataFrame, position: Position | None
+        self,
+        market: Market,
+        symbol: str,
+        bars: pd.DataFrame,
+        position: Position | None,
+        context: MarketContext,
     ) -> Signal | None:
         r = rsi(bars["close"], self.period)
         r_prev, r_now = r.iloc[-2], r.iloc[-1]

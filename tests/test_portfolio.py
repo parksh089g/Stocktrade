@@ -44,7 +44,7 @@ class Dated(Strategy):
         self.id = sid
         self.actions = {(s, DAYS[i].date()): side for (s, i), side in actions.items()}
 
-    def _evaluate(self, market, symbol, bars, position):
+    def _evaluate(self, market, symbol, bars, position, context=None):
         side = self.actions.get((symbol, bars.index[-1].date()))
         return self._signal(market, symbol, side, bars, "시험") if side else None
 
@@ -196,7 +196,8 @@ def test_period_runs_as_a_fresh_account():
     assert late.equity.iloc[0] == result.equity.iloc[0] == 500_000
 
 
-def test_compare_tool_picks_by_first_period_only(tmp_path, monkeypatch, capsys):
+@pytest.mark.parametrize("experiment", ["ab", "cd"])
+def test_compare_tool_picks_by_first_period_only(experiment, tmp_path, monkeypatch, capsys):
     import trading.backtest.compare as compare
     from trading.brokers.fake import FakeBroker
 
@@ -214,7 +215,9 @@ def test_compare_tool_picks_by_first_period_only(tmp_path, monkeypatch, capsys):
         },
     )
     split = make_random_bars(320).index[220].date().isoformat()
-    assert compare.main(["--market", "KR", "--days", "320", "--split", split]) == 0
+    argv = ["--experiment", experiment, "--market", "KR", "--days", "320", "--split", split]
+    assert compare.main(argv) == 0
     out = capsys.readouterr().out
     assert out.count("◀ 고름") == 1
+    assert out.count(" | ") >= 2 * len(compare.EXPERIMENTS[experiment])
     assert "KODEX 200 보유" in out

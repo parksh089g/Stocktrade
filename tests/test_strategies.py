@@ -195,3 +195,42 @@ def test_create_strategy():
     assert isinstance(create_strategy("trend_ma"), TrendMA)
     with pytest.raises(ValueError, match="알 수 없는 전략"):
         create_strategy("nope")
+
+
+# ---- ① 추세 추종 보완: 고점 대비 손절, 시장 필터 ----
+
+RISE_THEN_DROP = [10, 11, 12, 13, 14, 15, 16, 20, 22, 24, 26, 28, 30, 25]
+
+
+def test_trend_trailing_stop_sells_after_drop_from_peak():
+    bars = bars_from_closes(RISE_THEN_DROP)
+    pos = position("trend_ma", 20, opened_on=bars.index[7].date())  # 20에 사서 30까지 갔다가 25
+    with_trail = TrendMA(short=3, long=5, entry_window=2, trailing_stop=0.15)
+    signal = with_trail.evaluate(KR, "005930", bars, pos)
+    assert signal is not None
+    assert signal.side is Side.SELL
+    assert "고점 대비" in signal.reason
+    assert signal.stop_loss  # 일시정지 중에도 나간다
+    # 고점 대비 손절이 없으면 아직 단기선이 위라 그대로 보유
+    assert TrendMA(short=3, long=5, entry_window=2).evaluate(KR, "005930", bars, pos) is None
+
+
+def test_trend_market_filter():
+    from trading.strategies.base import MarketContext
+
+    bars = bars_from_closes(GOLDEN[:8])  # 마지막 날 골든크로스
+    filtered = TrendMA(short=3, long=5, entry_window=2, market_filter=3)
+    rising = MarketContext(index_bars=bars_from_closes([1, 2, 3, 4]))
+    falling = MarketContext(index_bars=bars_from_closes([4, 3, 2, 1]))
+
+    assert filtered.evaluate(KR, "005930", bars, None, rising).side is Side.BUY
+    assert filtered.evaluate(KR, "005930", bars, None, falling) is None
+    assert filtered.evaluate(KR, "005930", bars, None) is None  # 지수를 모르면 사지 않는다
+    assert TrendMA(short=3, long=5, entry_window=2).evaluate(KR, "005930", bars, None, falling)
+
+
+def test_trend_rejects_bad_new_params():
+    with pytest.raises(ValueError):
+        TrendMA(trailing_stop=1.5)
+    with pytest.raises(ValueError):
+        TrendMA(market_filter=200)

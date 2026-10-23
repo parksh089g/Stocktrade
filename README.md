@@ -30,6 +30,8 @@ uv run python -m trading.backtest --source kis --portfolio --days 1500   # 계�
 uv run python -m trading.backtest.compare                                # 개선안 비교(앞 기간에서 고르고 뒤 기간에서 확인)
 ```
 
+시험 결과와 결론은 [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md)에 남긴다.
+
 ## 하루 실행 (지금은 fake 증권사)
 
 ```bash

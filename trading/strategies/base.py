@@ -3,15 +3,27 @@
 전략은 상태를 갖지 않는다. 엔진과 백테스트가 똑같이 최근 일봉 lookback개와
 그 전략의 보유분을 넘겨주면, 전략은 매수/매도 신호를 내거나 None을 돌려준다.
 수량과 자금 배분은 전략이 아니라 리스크 단계에서 정한다.
+시장 전체 흐름이 필요하면 엔진이 지수 일봉을 MarketContext로 함께 넘겨준다.
 """
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import ClassVar
 
 import pandas as pd
 
 from trading.core.models import Market, Position, Side, Signal
+
+
+@dataclass(frozen=True)
+class MarketContext:
+    """모든 종목에 공통인 시장 정보."""
+
+    index_bars: pd.DataFrame | None = None  # 시장 지수(ETF) 일봉, 오늘 봉은 빠져 있다
+
+
+NO_CONTEXT = MarketContext()
 
 
 class Strategy(ABC):
@@ -26,7 +38,12 @@ class Strategy(ABC):
         """
 
     def evaluate(
-        self, market: Market, symbol: str, bars: pd.DataFrame, position: Position | None
+        self,
+        market: Market,
+        symbol: str,
+        bars: pd.DataFrame,
+        position: Position | None,
+        context: MarketContext = NO_CONTEXT,
     ) -> Signal | None:
         """마지막 행까지의 완성된 일봉을 보고 신호를 낸다.
 
@@ -38,11 +55,16 @@ class Strategy(ABC):
         if len(bars) < self.lookback:
             return None
         # 더 많이 넘어와도 lookback개만 쓴다. 지수평활 지표가 넘겨받은 길이에 따라 달라지지 않게.
-        return self._evaluate(market, symbol, bars.tail(self.lookback), position)
+        return self._evaluate(market, symbol, bars.tail(self.lookback), position, context)
 
     @abstractmethod
     def _evaluate(
-        self, market: Market, symbol: str, bars: pd.DataFrame, position: Position | None
+        self,
+        market: Market,
+        symbol: str,
+        bars: pd.DataFrame,
+        position: Position | None,
+        context: MarketContext,
     ) -> Signal | None: ...
 
     def _signal(

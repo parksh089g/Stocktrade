@@ -547,3 +547,29 @@ def test_full_cycle_with_supabase_store():
     assert [o["status"] for o in fake.tables["orders"]] == ["FILLED", "FILLED"]
     assert len(fake.tables["runs"]) == 3
     assert env.notification.url == "/runs/3"
+
+
+# ---- 시장 지수 일봉 넘기기 ----
+
+
+def test_engine_passes_index_bars_to_strategies(env: Env):
+    env.broker.set_bars(KR, "069500", bars_from_closes(list(range(1, 11)), end=MON))
+    env.engine.index_symbols = {KR: "069500"}
+    env.run()
+    context = env.a.contexts[-1]
+    assert context.index_bars is not None
+    assert context.index_bars.index[-1].date() == FRI  # 오늘 봉은 빠진다
+
+
+def test_engine_without_index_gives_empty_context(env: Env):
+    env.run()
+    assert env.a.contexts[-1].index_bars is None
+
+
+def test_index_error_is_a_warning_not_a_stop(env: Env):
+    env.engine.index_symbols = {KR: "NOPE"}
+    env.a.signals = {"005930": Side.BUY}
+    report = env.run()
+    assert report.status is RunStatus.OK
+    assert any("시장 지수(NOPE)" in w for w in report.warnings)
+    assert len(report.orders) == 1  # 시장 필터를 안 쓰는 전략은 그대로 주문

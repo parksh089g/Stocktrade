@@ -180,9 +180,16 @@ def run_portfolio_backtest(
     start: pd.Timestamp | None = None,
     end: pd.Timestamp | None = None,
     park: pd.DataFrame | None = None,
+    index: tuple[str, pd.DataFrame] | None = None,
 ) -> PortfolioResult:
-    """start~end 기간만 새 계좌로 돌린다(그 전 일봉은 지표 계산에만 쓴다)."""
-    broker = HistoricalBroker(market, bars, initial_cash, costs or DEFAULT_COSTS[market], park=park)
+    """start~end 기간만 새 계좌로 돌린다(그 전 일봉은 지표 계산에만 쓴다).
+
+    index=(종목, 일봉)을 주면 엔진이 그 일봉을 시장 지수로 전략에 넘긴다(시장 필터용).
+    """
+    all_bars = bars | ({index[0]: index[1]} if index else {})
+    broker = HistoricalBroker(
+        market, all_bars, initial_cash, costs or DEFAULT_COSTS[market], park=park
+    )
     store = MemoryStore()
     engine = Engine(
         broker=broker,
@@ -191,6 +198,7 @@ def run_portfolio_backtest(
         strategies=strategies,
         universe={m: list(instruments) if m is market else [] for m in Market},
         risk=risk,
+        index_symbols={market: index[0]} if index else None,
         clock=broker.now,
     )
     warmup = max(s.lookback for s in strategies)

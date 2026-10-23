@@ -1,0 +1,182 @@
+# 종목 확대 시험용 목록(국내/미국 대형주 20개씩). 운영 목록은 config/universe.toml.
+# 지금 시점의 대형주라 과거에 살아남은 종목만 고른 효과(생존 편향)가 있다.
+
+[[KR]]
+symbol = "005930"
+name = "삼성전자"
+
+[[KR]]
+symbol = "000660"
+name = "SK하이닉스"
+
+[[KR]]
+symbol = "373220"
+name = "LG에너지솔루션"
+
+[[KR]]
+symbol = "207940"
+name = "삼성바이오로직스"
+
+[[KR]]
+symbol = "005380"
+name = "현대차"
+
+[[KR]]
+symbol = "000270"
+name = "기아"
+
+[[KR]]
+symbol = "068270"
+name = "셀트리온"
+
+[[KR]]
+symbol = "035420"
+name = "NAVER"
+
+[[KR]]
+symbol = "105560"
+name = "KB금융"
+
+[[KR]]
+symbol = "055550"
+name = "신한지주"
+
+[[KR]]
+symbol = "012330"
+name = "현대모비스"
+
+[[KR]]
+symbol = "005490"
+name = "POSCO홀딩스"
+
+[[KR]]
+symbol = "035720"
+name = "카카오"
+
+[[KR]]
+symbol = "051910"
+name = "LG화학"
+
+[[KR]]
+symbol = "006400"
+name = "삼성SDI"
+
+[[KR]]
+symbol = "028260"
+name = "삼성물산"
+
+[[KR]]
+symbol = "066570"
+name = "LG전자"
+
+[[KR]]
+symbol = "003550"
+name = "LG"
+
+[[KR]]
+symbol = "032830"
+name = "삼성생명"
+
+[[KR]]
+symbol = "015760"
+name = "한국전력"
+
+[[US]]
+symbol = "AAPL"
+name = "Apple"
+exchange = "NASDAQ"
+
+[[US]]
+symbol = "MSFT"
+name = "Microsoft"
+exchange = "NASDAQ"
+
+[[US]]
+symbol = "NVDA"
+name = "NVIDIA"
+exchange = "NASDAQ"
+
+[[US]]
+symbol = "AMZN"
+name = "Amazon"
+exchange = "NASDAQ"
+
+[[US]]
+symbol = "GOOGL"
+name = "Alphabet"
+exchange = "NASDAQ"
+
+[[US]]
+symbol = "META"
+name = "Meta Platforms"
+exchange = "NASDAQ"
+
+[[US]]
+symbol = "TSLA"
+name = "Tesla"
+exchange = "NASDAQ"
+
+[[US]]
+symbol = "AVGO"
+name = "Broadcom"
+exchange = "NASDAQ"
+
+[[US]]
+symbol = "COST"
+name = "Costco"
+exchange = "NASDAQ"
+
+[[US]]
+symbol = "NFLX"
+name = "Netflix"
+exchange = "NASDAQ"
+
+[[US]]
+symbol = "JPM"
+name = "JPMorgan Chase"
+exchange = "NYSE"
+
+[[US]]
+symbol = "V"
+name = "Visa"
+exchange = "NYSE"
+
+[[US]]
+symbol = "UNH"
+name = "UnitedHealth"
+exchange = "NYSE"
+
+[[US]]
+symbol = "XOM"
+name = "Exxon Mobil"
+exchange = "NYSE"
+
+[[US]]
+symbol = "JNJ"
+name = "Johnson & Johnson"
+exchange = "NYSE"
+
+[[US]]
+symbol = "PG"
+name = "Procter & Gamble"
+exchange = "NYSE"
+
+[[US]]
+symbol = "HD"
+name = "Home Depot"
+exchange = "NYSE"
+
+[[US]]
+symbol = "MA"
+name = "Mastercard"
+exchange = "NYSE"
+
+[[US]]
+symbol = "LLY"
+name = "Eli Lilly"
+exchange = "NYSE"
+
+[[US]]
+symbol = "KO"
+name = "Coca-Cola"
+exchange = "NYSE"

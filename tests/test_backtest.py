@@ -28,7 +28,7 @@ class Scripted(Strategy):
     def lookback(self) -> int:
         return self._lookback
 
-    def _evaluate(self, market, symbol, bars, position) -> Signal | None:
+    def _evaluate(self, market, symbol, bars, position, context=None) -> Signal | None:
         day = bars.index[-1].date()
         self.seen.append((day, len(bars), position))
         side = self.actions.get(day)
