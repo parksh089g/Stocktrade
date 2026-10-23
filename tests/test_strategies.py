@@ -132,6 +132,7 @@ def test_rsi_stop_loss_first(rsi_strategy: RsiRebound):
     assert signal is not None
     assert signal.side is Side.SELL
     assert "손절" in signal.reason
+    assert signal.stop_loss
 
 
 def test_rsi_sells_on_recovery(rsi_strategy: RsiRebound):
@@ -143,6 +144,7 @@ def test_rsi_sells_on_recovery(rsi_strategy: RsiRebound):
     assert signal is not None
     assert signal.side is Side.SELL
     assert "RSI 회복" in signal.reason
+    assert not signal.stop_loss
 
 
 def test_rsi_time_exit(rsi_strategy: RsiRebound):

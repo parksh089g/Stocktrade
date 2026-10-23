@@ -1,7 +1,9 @@
 """하루 실행 흐름.
 
-스위치 확인 → 체결 동기화 → (일시정지/휴장/장 마감이면 여기서 끝) → 계좌 조회 → 시세 → 신호
+스위치 확인 → 체결 동기화 → (휴장/장 마감이면 여기서 끝) → 계좌 조회 → 시세 → 신호
 → 리스크 → 주문(주문마다 스위치 재확인) → 기록 → 알림
+
+일시정지 중에는 손절 매도만 주문하고 나머지 신호는 '주문 안 함'으로 알린다.
 
 오류 처리
 - 스위치, 계좌, 주문 내역 조회가 실패하면 주문하지 않고 오류 알림만 보낸다.
@@ -28,6 +30,7 @@ from trading.core.models import (
     Position,
     Side,
     Signal,
+    SkippedSignal,
 )
 from trading.engine.report import RunReport, RunStatus, format_report
 from trading.engine.sync import record_new_order, sync_open_orders
@@ -42,6 +45,7 @@ logger = logging.getLogger(__name__)
 
 # 이보다 오래된 일봉이면 시세가 멈춘 것으로 보고 그 종목을 건너뛴다(연휴 고려)
 MAX_BAR_AGE_DAYS = 7
+PAUSED_SKIP = "일시정지 중이라 주문하지 않았습니다(손절 매도만 나갑니다)"
 
 
 class OrderPlacementError(Exception):
@@ -121,9 +125,7 @@ class Engine:
         report.warnings += synced.warnings
 
         if pause.paused:
-            report.status = RunStatus.PAUSED
-            report.message = pause.reason or "일시정지 스위치가 켜져 있습니다"
-            return
+            _mark_paused(report, pause.reason)
         if self.check_market_hours:
             if not self.broker.is_trading_day(market, today):
                 report.status = RunStatus.SKIPPED
@@ -141,6 +143,11 @@ class Engine:
 
         signals, prices = self._collect_signals(market, today, positions, report)
         report.signals = signals
+        if pause.paused:
+            report.skipped += [
+                SkippedSignal(signal=s, reason=PAUSED_SKIP) for s in signals if not s.stop_loss
+            ]
+            signals = [s for s in signals if s.stop_loss]
 
         ordered_today, bought_today = self._orders_today(market, today)
         plan = plan_orders(
@@ -156,7 +163,7 @@ class Engine:
             config=self.risk,
             daily_buy_cap=self.daily_buy_caps.get(market),
         )
-        report.skipped = plan.skipped
+        report.skipped += plan.skipped
         report.warnings += plan.warnings
         self._place_orders(plan.orders, report)
 
@@ -223,15 +230,14 @@ class Engine:
         return symbols, bought
 
     def _place_orders(self, planned: list[PlannedOrder], report: RunReport) -> None:
-        for i, p in enumerate(planned):
+        for p in planned:
             pause = self.store.get_pause()
-            if pause.paused:
-                report.status = RunStatus.PAUSED
-                report.message = pause.reason or "일시정지 스위치가 켜져 있습니다"
-                report.warnings.append(
-                    f"주문 도중 일시정지가 켜져 남은 주문 {len(planned) - i}건을 내지 않았습니다"
-                )
-                return
+            if pause.paused and not p.signal.stop_loss:
+                if report.status is not RunStatus.PAUSED:
+                    _mark_paused(report, pause.reason)
+                    report.warnings.append("주문 도중 일시정지가 켜졌습니다")
+                report.skipped.append(SkippedSignal(signal=p.signal, reason=PAUSED_SKIP))
+                continue
             try:
                 result = self.broker.place_order(p.order)
             except Exception as e:
@@ -248,6 +254,11 @@ class Engine:
 
     def _clean(self, text: str) -> str:
         return redact(text, self.secrets)
+
+
+def _mark_paused(report: RunReport, reason: str) -> None:
+    report.status = RunStatus.PAUSED
+    report.message = (reason or "일시정지 스위치가 켜져 있습니다") + " (손절 매도만 냅니다)"
 
 
 def _reconcile(positions: list[Position], holdings: list[Holding]) -> list[str]:

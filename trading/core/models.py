@@ -95,6 +95,7 @@ class Signal(_Frozen):
     price: Price  # 신호 기준 가격(보통 마지막 종가)
     bar_date: date  # 신호를 낸 일봉 날짜(그 시장 현지 날짜)
     reason: str
+    stop_loss: bool = False  # 손절 매도. 일시정지 중에도 주문한다
     created_at: UtcDatetime = Field(default_factory=now_utc)
 
 

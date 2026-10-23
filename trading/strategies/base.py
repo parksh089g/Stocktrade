@@ -46,7 +46,14 @@ class Strategy(ABC):
     ) -> Signal | None: ...
 
     def _signal(
-        self, market: Market, symbol: str, side: Side, bars: pd.DataFrame, reason: str
+        self,
+        market: Market,
+        symbol: str,
+        side: Side,
+        bars: pd.DataFrame,
+        reason: str,
+        *,
+        stop_loss: bool = False,
     ) -> Signal:
         return Signal(
             market=market,
@@ -56,4 +63,5 @@ class Strategy(ABC):
             price=Decimal(str(bars["close"].iloc[-1])),
             bar_date=bars.index[-1].date(),
             reason=reason,
+            stop_loss=stop_loss,
         )

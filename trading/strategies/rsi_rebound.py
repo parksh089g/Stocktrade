@@ -62,7 +62,7 @@ class RsiRebound(Strategy):
         if close <= stop_price:
             fmt = market.format_price
             reason = f"손절: 종가 {fmt(close)} ≤ 손절가 {fmt(stop_price)}"
-            return self._signal(market, symbol, Side.SELL, bars, reason)
+            return self._signal(market, symbol, Side.SELL, bars, reason, stop_loss=True)
 
         if r_now >= self.exit_level:
             return self._signal(market, symbol, Side.SELL, bars, f"RSI 회복: {r_now:.1f}")

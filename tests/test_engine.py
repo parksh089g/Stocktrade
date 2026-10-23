@@ -234,19 +234,73 @@ def test_paused_places_no_orders_but_still_syncs(env: Env):
     assert len(env.broker.get_orders(KR, MON + timedelta(days=1))) == 0
 
 
-def test_pause_turned_on_during_orders_stops_remaining():
-    class PauseAfterFirstOrder(MemoryStore):
-        def save_order(self, result):
-            super().save_order(result)
-            self.set_pause(True, "폰에서 정지")
+class PauseAfterFirstOrder(MemoryStore):
+    def save_order(self, result):
+        super().save_order(result)
+        self.set_pause(True, "폰에서 정지")
 
+
+def test_pause_turned_on_during_orders_stops_remaining():
     env = make_env(store=PauseAfterFirstOrder())
     env.a.signals = {"005930": Side.BUY, "000660": Side.BUY}
     report = env.run()
     assert len(report.orders) == 1
     assert len(env.broker_orders()) == 1
     assert report.status is RunStatus.PAUSED
-    assert any("남은 주문 1건" in w for w in report.warnings)
+    assert "주문 도중 일시정지가 켜졌습니다" in report.warnings
+    assert [s.signal.symbol for s in report.skipped] == ["000660"]
+
+
+def hold(env: Env, symbol: str, strategy: str = "a", qty: int = 5, avg: int = 80_000) -> None:
+    """전략 보유분과 계좌 보유를 함께 만든다."""
+    env.store.upsert_position(
+        Position(
+            market=KR,
+            symbol=symbol,
+            strategy=strategy,
+            qty=qty,
+            avg_price=D(avg),
+            opened_at=datetime(2026, 10, 1, tzinfo=KST),
+        )
+    )
+    env.broker.set_holding(KR, symbol, qty, avg)
+
+
+def test_stop_loss_sell_goes_out_while_paused(env: Env):
+    hold(env, "005930")
+    hold(env, "000660", strategy="b", avg=220_000)
+    env.store.set_pause(True, "점검 중")
+    env.a.signals = {"005930": Side.SELL}
+    env.a.stop_loss = {"005930"}
+    env.b.signals = {"000660": Side.SELL}  # 손절이 아닌 일반 매도
+    report = env.run()
+
+    assert report.status is RunStatus.PAUSED
+    assert [(r.order.symbol, r.order.side) for r in report.orders] == [("005930", Side.SELL)]
+    [skipped] = report.skipped
+    assert skipped.signal.symbol == "000660"
+    assert "일시정지" in skipped.reason
+    assert "점검 중 (손절 매도만 냅니다)" in env.message
+
+
+def test_buys_are_not_placed_while_paused(env: Env):
+    env.store.set_pause(True)
+    env.a.signals = {"005930": Side.BUY}
+    report = env.run()
+    assert report.orders == []
+    assert env.broker_orders() == []
+    assert "일시정지" in report.skipped[0].reason
+
+
+def test_stop_loss_continues_when_pause_turned_on_mid_run():
+    env = make_env(store=PauseAfterFirstOrder())
+    hold(env, "000660")
+    env.a.signals = {"005930": Side.BUY, "000660": Side.SELL}
+    env.a.stop_loss = {"000660"}
+    report = env.run()
+    # 매도(손절)가 먼저 나가고, 그 뒤 켜진 일시정지에 매수는 막힌다
+    assert [(r.order.symbol, r.order.side) for r in report.orders] == [("000660", Side.SELL)]
+    assert [s.signal.symbol for s in report.skipped] == ["005930"]
 
 
 def test_holiday_is_skipped(env: Env):
