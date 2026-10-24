@@ -73,6 +73,14 @@ def test_live_only_when_variable_says_live_and_on_main():
     assert "KIS_PAPER" not in found["live"]
 
 
+def test_settings_step_shows_variables_but_no_secrets():
+    shown = [s for s in steps(read("engine.yml")) if s.startswith("name: 설정 표시")]
+    assert len(shown) == 1
+    assert "vars.SCHEDULE_ENABLED" in shown[0]
+    assert "vars.TRADING_MODE" in shown[0]
+    assert "secrets." not in shown[0]
+
+
 def test_workflows_are_read_only_and_pin_actions():
     for path in WORKFLOWS.glob("*.yml"):
         text = path.read_text()

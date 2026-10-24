@@ -40,6 +40,17 @@ jobs:
       - name: 설치
         run: uv sync --locked --no-dev
 
+      - name: 설정 표시
+        # 저장소 변수는 비밀값이 아니라서 실행 기록에 남긴다. 비밀값은 이 단계에 넣지 않는다.
+        env:
+          SCHEDULE_ENABLED: ${{ vars.SCHEDULE_ENABLED }}
+          MODE_VARIABLE: ${{ vars.TRADING_MODE }}
+        run: |
+          echo "실행 방식: $GITHUB_EVENT_NAME"
+          echo "예약 실행 SCHEDULE_ENABLED=${SCHEDULE_ENABLED:-(없음)}"
+          echo "모드 변수 TRADING_MODE=${MODE_VARIABLE:-(없음, 모의투자)}"
+          echo "하루 매수 한도 KRW=${MAX_DAILY_BUY_KRW:-(기본값)} USD=${MAX_DAILY_BUY_USD:-(기본값)}"
+
       - name: 실행 (모의투자)
         if: vars.TRADING_MODE != 'live'
         env:
