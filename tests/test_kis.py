@@ -377,6 +377,20 @@ def test_parse_us_order():
     assert parse_us_order(row | {"orgn_odno": "0000000008"}) is None  # 정정/취소 주문 줄
 
 
+def test_parse_us_order_pads_order_number_like_order_response():
+    """미국 모의투자 주문 내역은 주문번호 앞의 0을 빼고, 새 주문의 원주문번호를 "0"으로 준다."""
+    row = {
+        "ord_dt": "20261026", "ord_tmd": "093622", "dmst_ord_dt": "20261026",
+        "thco_ord_tmd": "223622", "odno": "36551", "orgn_odno": "0", "pdno": "AAPL",
+        "sll_buy_dvsn_cd": "02", "ft_ord_qty": "1", "ft_ord_unpr3": "275.22000000",
+        "ft_ccld_qty": "0", "ft_ccld_unpr3": "0", "prcs_stat_name": "", "rjct_rson": "",
+    }  # fmt: skip
+    r = parse_us_order(row)
+    assert r.broker_order_id == "0000036551"
+    assert r.order.client_order_id == "KIS-0000036551"
+    assert r.status is OrderStatus.SUBMITTED
+
+
 # ---- 엔진과 함께 ----
 
 
@@ -425,6 +439,29 @@ def test_engine_dry_run_places_nothing(make):
     assert [(o.symbol, o.qty, o.limit_price) for o in report.planned] == [("005930", 17, 70700)]
 
 
+def test_engine_us_buys_through_kis_and_records_fill_next_day(make):
+    engine, fake, store, a, clock = engine_with_kis(make)
+    clock.now = datetime(2026, 10, 26, 22, 40, tzinfo=KST)  # 뉴욕 09:40
+    fake.us_bars["AAPL"] = us_bar_rows(date(2026, 10, 9), [180.0] * 11)  # 10/9~10/23
+    a.signals = {"AAPL": Side.BUY}
+    report = engine.run(US)
+    assert report.status is RunStatus.OK
+    [placed] = report.orders
+    [kis_order] = fake.us_orders
+    assert kis_order["odno"] == placed.broker_order_id.lstrip("0")  # 내역은 0을 빼고 온다
+
+    # 장중에 체결됐다고 치고 다음 날 실행
+    qty = kis_order["ft_ord_qty"]
+    kis_order.update(ft_ccld_qty=qty, ft_ccld_unpr3="180.40000000", nccs_qty="0")
+    a.signals = {}
+    clock.now += timedelta(days=1)
+    second = engine.run(US)
+    assert not [w for w in second.warnings if "찾지 못했습니다" in w]
+    assert [(f.qty, f.price) for f in second.fills] == [(int(qty), D("180.40"))]
+    [pos] = store.get_positions(US)
+    assert (pos.strategy, pos.qty) == ("a", int(qty))
+
+
 def test_engine_us_before_open_is_skipped(make):
     engine, fake, _, a, clock = engine_with_kis(make)
     clock.now = datetime(2026, 10, 26, 22, 0, tzinfo=KST)  # 뉴욕 09:00, 개장 전
@@ -466,6 +503,15 @@ def test_kis_check_order_test_paper(check_env, capsys):
     assert "1주 지정가 56,000" in out  # 70,000 × 0.8
     assert "주문 내역: SUBMITTED" in out
     assert len(check_env.kr_orders) == 1
+
+
+def test_kis_check_order_test_us(check_env, capsys):
+    check_env.us_bars["AAPL"] = us_bar_rows(date(2026, 3, 2), [180.0] * 150)
+    assert kis_check.main(["--market", "US", "--order-test", "US"]) == 0
+    out = capsys.readouterr().out
+    assert "1주 지정가 144.40" in out  # 180.50 × 0.8
+    assert "주문 내역: SUBMITTED" in out
+    assert len(check_env.us_orders) == 1
 
 
 def test_kis_check_order_test_refused_in_live(check_env, monkeypatch, capsys):

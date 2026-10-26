@@ -253,8 +253,9 @@ class FakeKis:
                 "ord_tmd": "094000",
                 "dmst_ord_dt": self.order_date,
                 "thco_ord_tmd": "224000",
-                "odno": odno,
-                "orgn_odno": "",
+                # 모의투자 실제 응답처럼 주문 내역은 앞의 0을 빼고, 새 주문의 원주문번호는 "0"
+                "odno": odno.lstrip("0"),
+                "orgn_odno": "0",
                 "pdno": body["PDNO"],
                 "sll_buy_dvsn_cd": side,
                 "ft_ord_qty": body["ORD_QTY"],

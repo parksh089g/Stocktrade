@@ -339,7 +339,7 @@ class KisBroker(BrokerAdapter):
             raise BrokerError(f"KIS 주문 응답에 주문번호가 없습니다: {order.symbol}")
         return OrderResult(
             order=order,
-            broker_order_id=str(odno),
+            broker_order_id=_order_no(odno),
             status=OrderStatus.SUBMITTED,
             message=str(resp.body.get("msg1", "")).strip(),
             created_at=self._clock(),
@@ -475,8 +475,15 @@ class KisBroker(BrokerAdapter):
 # ---- 응답 해석 (순수 함수: 테스트하기 쉽게 밖으로 뺐다) ----
 
 
+def _order_no(value: Any) -> str:
+    """주문번호를 10자리로 맞춘다. 주문 응답과 국내 주문 내역은 0으로 채워 10자리로 주지만
+    미국 모의투자 주문 내역은 앞의 0을 빼고 준다(0000036551 → 36551). 맞추지 않으면 같은 주문을
+    다른 주문으로 본다."""
+    return str(value).strip().zfill(10)
+
+
 def _is_amend_row(row: dict[str, Any]) -> bool:
-    """정정/취소 주문 줄인지. 새 주문 줄은 원주문번호가 비어 있거나 0000000000으로 온다."""
+    """정정/취소 주문 줄인지. 새 주문 줄은 원주문번호가 비어 있거나 0, 0000000000으로 온다."""
     return bool(str(row.get("orgn_odno") or "").strip().lstrip("0"))
 
 
@@ -563,6 +570,7 @@ def _result(
     created_at: datetime | None,
     message: str = "",
 ) -> OrderResult:
+    odno = _order_no(odno)
     order = Order(
         market=market,
         symbol=symbol,
@@ -575,7 +583,7 @@ def _result(
     )
     return OrderResult(
         order=order,
-        broker_order_id=str(odno),
+        broker_order_id=odno,
         status=status,
         filled_qty=min(filled, qty),
         avg_fill_price=avg if filled > 0 and avg > 0 else None,
