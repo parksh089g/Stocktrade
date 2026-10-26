@@ -9,6 +9,10 @@
 확정된 일봉 뒤에 지금 가격으로 만든 오늘 봉을 붙여 전략에 넘기고, 손절 매도 신호만 쓴다.
 매수와 일반 매도는 확정된 종가로만 판단하므로 내지 않는다. 알릴 일이 없으면 알림을 보내지 않는다.
 
+하루 한 번(once_per_day)은 GitHub 예약 실행이 늦거나 빠질 때를 대비해 같은 실행을 두 번
+예약하기 위한 것이다. 오늘 같은 종류의 실행이 완료(또는 일시정지)로 끝났으면 기록과 알림 없이
+끝낸다. 오류로 끝났으면 다시 돈다.
+
 오류 처리
 - 스위치, 계좌, 주문 내역 조회가 실패하면 주문하지 않고 오류 알림만 보낸다.
 - 한 종목의 시세나 신호 계산이 실패하면 그 종목만 건너뛰고 경고로 알린다.
@@ -93,6 +97,7 @@ class Engine:
         check_market_hours: bool = True,
         dry_run: bool = False,
         stop_loss_only: bool = False,
+        once_per_day: bool = False,
         index_symbols: Mapping[Market, str] | None = None,
         clock: Callable[[], datetime] = now_utc,
     ) -> None:
@@ -110,6 +115,7 @@ class Engine:
         self.check_market_hours = check_market_hours
         self.dry_run = dry_run
         self.stop_loss_only = stop_loss_only
+        self.once_per_day = once_per_day
         # 시장 지수(ETF) 종목. 주면 그 일봉을 MarketContext로 전략에 함께 넘긴다.
         self.index_symbols = dict(index_symbols or {})
         self.clock = clock
@@ -122,6 +128,12 @@ class Engine:
             dry_run=self.dry_run,
             stop_loss_only=self.stop_loss_only,
         )
+        today = trading_date(market, report.started_at)
+        if self._done_today(market, today):
+            logger.info("오늘(%s) 이미 실행해서 건너뜁니다", today)
+            report.status = RunStatus.SKIPPED
+            report.message = f"오늘({today}) 이미 실행했습니다"
+            return report
         try:
             self._run(market, report)
         except (OrderPlacementError, OrderRecordError) as e:
@@ -141,6 +153,8 @@ class Engine:
         except Exception as e:
             logger.exception("실행 기록 저장 실패")
             report.warnings.append(self._clean(f"실행 기록 저장 실패: {type(e).__name__}: {e}"))
+        if report.status in (RunStatus.OK, RunStatus.PAUSED):
+            self._mark_done(market, today)
 
         if self.stop_loss_only and not self.dry_run and _nothing_to_tell(report):
             logger.info("손절 확인: 알릴 일이 없어 알림을 보내지 않습니다")
@@ -364,6 +378,29 @@ class Engine:
             report.warnings += recorded.warnings
 
     # ---- 도움 함수 ----
+
+    def _done_key(self, market: Market) -> str:
+        kind = "stoploss" if self.stop_loss_only else "trade"
+        return f"run_done_{self.mode}_{market}_{kind}"
+
+    def _done_today(self, market: Market, today: date) -> bool:
+        if not self.once_per_day or self.dry_run:
+            return False
+        try:
+            return self.store.get_cache(self._done_key(market)) == today.isoformat()
+        except Exception:
+            # 모르면 실행한다. 같은 날 같은 종목 중복 주문은 따로 막는다.
+            logger.warning("오늘 실행 여부를 읽지 못해 그대로 실행합니다", exc_info=True)
+            return False
+
+    def _mark_done(self, market: Market, today: date) -> None:
+        if not self.once_per_day or self.dry_run:
+            return
+        try:
+            self.store.put_cache(self._done_key(market), today.isoformat())
+        except Exception:
+            # 백업 예약 실행이 한 번 더 돌 뿐이다(중복 주문은 따로 막는다)
+            logger.warning("오늘 실행 완료 표시를 저장하지 못했습니다", exc_info=True)
 
     def _market_context(
         self, market: Market, today: date, count: int, report: RunReport

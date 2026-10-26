@@ -18,29 +18,45 @@ def read(name: str) -> str:
     return (WORKFLOWS / name).read_text()
 
 
-def run_times(text: str, week: datetime) -> list[datetime]:
-    """그 주에 예약 실행이 도는 UTC 시각들."""
-    times = []
+def cron_times(text: str, week: datetime) -> list[list[datetime]]:
+    """예약(cron 줄)마다 그 주에 도는 UTC 시각들."""
+    result = []
     for minute, hour, first, last in CRON.findall(text):
+        times = []
         for dow in range(int(first), int(last) + 1):  # 0=일요일
             day = week + timedelta(days=dow)
             times.append(day.replace(hour=int(hour), minute=int(minute)))
-    return times
+        result.append(times)
+    return result
+
+
+def run_times(text: str, week: datetime) -> list[datetime]:
+    """그 주에 예약 실행이 도는 UTC 시각들."""
+    return [t for times in cron_times(text, week) for t in times]
+
+
+def close_of(market: Market, t: datetime) -> datetime:
+    return datetime.combine(t.date(), market.close_time, tzinfo=t.tzinfo)
 
 
 @pytest.mark.parametrize(
     ("name", "market"), [("trade-kr.yml", Market.KR), ("trade-us.yml", Market.US)]
 )
 @pytest.mark.parametrize("week", WEEKS)
-def test_schedule_runs_once_each_weekday_inside_order_window(name, market, week):
-    times = run_times(read(name), week)
-    local = [t.astimezone(market.timezone) for t in times]
-    assert sorted(t.weekday() for t in local) == [0, 1, 2, 3, 4]  # 현지 월~금 하루 한 번
-    for t in local:
-        assert t.time() >= market.order_start_time
+def test_schedule_runs_each_weekday_with_backup_inside_order_window(name, market, week):
+    primary, backup = (
+        sorted(t.astimezone(market.timezone) for t in times)
+        for times in cron_times(read(name), week)
+    )
+    for times in (primary, backup):
+        assert [t.weekday() for t in times] == [0, 1, 2, 3, 4]  # 현지 월~금 하루 한 번
+        assert all(t.time() >= market.order_start_time for t in times)
+    for p, b in zip(primary, backup, strict=True):
         # GitHub 예약 실행이 늦게 시작해도 장 마감 전에 돌 수 있게 여유를 둔다
-        close = datetime.combine(t.date(), market.close_time, tzinfo=t.tzinfo)
-        assert close - t >= timedelta(hours=5)
+        assert close_of(market, p) - p >= timedelta(hours=5)
+        # 백업은 같은 혼잡에 같이 걸리지 않게 한참 뒤에, 그래도 마감까지 여유 있게
+        assert timedelta(minutes=45) <= b - p <= timedelta(hours=2)
+        assert close_of(market, b) - b >= timedelta(hours=3)
 
 
 @pytest.mark.parametrize(
@@ -52,9 +68,8 @@ def test_stop_loss_check_runs_well_after_morning_and_before_close(name, market, 
     assert sorted(t.weekday() for t in local) == [0, 1, 2, 3, 4]
     for t in local:
         start = datetime.combine(t.date(), market.order_start_time, tzinfo=t.tzinfo)
-        close = datetime.combine(t.date(), market.close_time, tzinfo=t.tzinfo)
         assert t - start >= timedelta(hours=3)  # 아침 실행 뒤 장중 가격을 본다
-        assert close - t >= timedelta(hours=2)  # 예약 실행이 늦어도 마감 전에 돌 여유
+        assert close_of(market, t) - t >= timedelta(hours=2)  # 예약 실행이 늦어도 마감 전에 돌 여유
 
 
 @pytest.mark.parametrize(
@@ -76,10 +91,12 @@ def test_workflows_run_engine_for_their_market(name, market, stop_loss_only):
     assert ("stop_loss_only: true" in text) is stop_loss_only
 
 
-def test_engine_passes_stop_loss_only_to_both_modes():
+def test_engine_passes_run_options_to_both_modes():
     text = read("engine.yml")
     assert "STOP_LOSS_ARGS: ${{ inputs.stop_loss_only && '--stop-loss-only' || '' }}" in text
-    assert text.count("$DRY_RUN_ARGS $STOP_LOSS_ARGS\n") == 2
+    # 하루 한 번은 예약 실행에만. 손으로 실행은 언제나 돈다.
+    assert "ONCE_ARGS: ${{ github.event_name == 'schedule' && '--once-per-day' || '' }}" in text
+    assert text.count("$DRY_RUN_ARGS $STOP_LOSS_ARGS $ONCE_ARGS\n") == 2
 
 
 def steps(text: str) -> list[str]:

@@ -672,3 +672,96 @@ def test_stop_loss_check_dry_run_always_reports():
     env.run()
     assert env.notification.title == "[모의투자] 국내 · 완료 · 손절 확인 · 시험 실행"
     assert "손절할 종목이 없습니다" in env.message
+
+
+# ---- 예약 실행 백업(하루 한 번) ----
+
+
+def test_backup_run_after_done_does_nothing():
+    env = make_env(once_per_day=True)
+    env.a.signals = {"005930": Side.BUY}
+    assert env.run().status is RunStatus.OK
+    assert env.store.cache == {"run_done_paper_KR_trade": "2026-10-26"}
+
+    env.clock.now += timedelta(hours=1)  # 백업 예약 실행
+    env.a.signals = {"000660": Side.BUY}
+    report = env.run()
+    assert report.status is RunStatus.SKIPPED
+    assert "이미 실행했습니다" in report.message
+    assert len(env.broker_orders()) == 1  # 새 주문 없음
+    assert len(env.store.runs) == 1  # 기록도 알림도 없다
+    assert len(env.notifier.messages) == 1
+
+
+def test_backup_run_retries_after_error():
+    env = make_env(once_per_day=True)
+    env.broker.fail_on.add("get_balance")
+    env.a.signals = {"005930": Side.BUY}
+    assert env.run().status is RunStatus.ERROR
+    assert env.store.cache == {}
+
+    env.broker.fail_on.clear()
+    env.clock.now += timedelta(hours=1)
+    assert len(env.run().orders) == 1
+
+
+def test_paused_run_counts_as_done():
+    env = make_env(once_per_day=True)
+    env.store.set_pause(True)
+    assert env.run().status is RunStatus.PAUSED
+    env.store.set_pause(False)
+    env.a.signals = {"005930": Side.BUY}
+    assert env.run().status is RunStatus.SKIPPED
+
+
+def test_once_per_day_runs_again_next_day():
+    env = make_env(once_per_day=True)
+    env.run()
+    env.next_day()  # 화요일
+    env.broker.set_bars(KR, "005930", bars_from_closes([70_000] * 10, end=MON))
+    env.broker.set_bars(KR, "000660", bars_from_closes([200_000] * 10, end=MON))
+    assert env.run().status is RunStatus.OK
+    assert len(env.store.runs) == 2
+
+
+def test_stop_loss_check_is_counted_separately():
+    env = make_env(once_per_day=True)
+    env.run()
+    check = Engine(
+        broker=env.broker,
+        store=env.store,
+        notifier=env.notifier,
+        strategies=[env.a, env.b],
+        universe=env.engine.universe,
+        clock=env.clock,
+        stop_loss_only=True,
+        once_per_day=True,
+    )
+    env.clock.now = MON_1317
+    assert check.run(KR).status is RunStatus.OK
+    assert env.store.cache["run_done_paper_KR_stoploss"] == "2026-10-26"
+    assert check.run(KR).status is RunStatus.SKIPPED
+
+
+def test_without_once_per_day_every_run_counts():
+    env = make_env()  # 손으로 실행
+    env.run()
+    assert env.run().status is RunStatus.OK
+    assert env.store.cache == {}
+
+
+def test_done_marker_errors_do_not_stop_the_run():
+    env = make_env(once_per_day=True)
+    env.store.fail_on.update({"get_cache", "put_cache"})
+    env.a.signals = {"005930": Side.BUY}
+    report = env.run()
+    assert report.status is RunStatus.OK
+    assert len(report.orders) == 1
+    assert report.warnings == []
+
+
+def test_dry_run_does_not_mark_done():
+    env = make_env(once_per_day=True, dry_run=True)
+    env.run()
+    assert env.run().status is RunStatus.OK
+    assert env.store.cache == {}

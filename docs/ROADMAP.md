@@ -16,6 +16,7 @@
     (SCHEDULE_ENABLED), 실전은 변수 TRADING_MODE=live + main 브랜치일 때만.
   - 2026-10-23 확인: Supabase 연결, Actions 시험 실행(국내/미국), 두 번째 실행이 Supabase의 토큰을 다시 씀.
   - 2026-10-26 추가: 장 마감 전 손절 확인 실행(stoploss-kr.yml, stoploss-us.yml). 지금 가격으로 손절 매도만 낸다.
+  - 2026-10-26 추가: 아침 예약 실행 백업(한 시간쯤 뒤 한 번 더). 먼저 끝난 쪽이 있으면 나머지는 조용히 끝난다.
 - [ ] M7. 웹앱: Vite + TypeScript PWA, Supabase Auth 로그인, 포지션/주문/알림함 확인, 일시정지 스위치, 푸시 구독, Cloudflare Pages 배포
 
 실전(live) 전환은 M7까지 끝나고 폰에서 알림이 오는 것을 확인한 뒤에 한다.

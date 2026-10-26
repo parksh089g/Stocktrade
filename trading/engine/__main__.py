@@ -39,6 +39,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="장 마감 전 손절 확인: 보유 종목을 지금 가격으로 보고 손절 매도만 낸다(매수 안 함)",
     )
+    parser.add_argument(
+        "--once-per-day",
+        action="store_true",
+        help="예약 실행용: 오늘 같은 종류의 실행이 이미 끝났으면 기록과 알림 없이 끝낸다",
+    )
     parser.add_argument("--seed", type=int, default=0, help="fake 증권사 가짜 데이터 시드")
     args = parser.parse_args(argv)
 
@@ -73,6 +78,7 @@ def main(argv: list[str] | None = None) -> int:
         check_market_hours=not args.ignore_hours,
         dry_run=args.dry_run,
         stop_loss_only=args.stop_loss_only,
+        once_per_day=args.once_per_day,
     )
     report = engine.run(market)
     # 오류나 알림 실패는 종료 코드로도 알린다(GitHub Actions 실패 표시)

@@ -32,6 +32,8 @@ jobs:
       DRY_RUN_ARGS: ${{ inputs.dry_run && '--dry-run --ignore-hours' || '' }}
       # 손절 확인 실행은 보유 종목을 지금 가격으로 보고 손절 매도만 낸다
       STOP_LOSS_ARGS: ${{ inputs.stop_loss_only && '--stop-loss-only' || '' }}
+      # 예약 실행은 백업으로 두 번 예약해 두고, 오늘 이미 끝났으면 기록과 알림 없이 끝낸다
+      ONCE_ARGS: ${{ github.event_name == 'schedule' && '--once-per-day' || '' }}
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
       VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
@@ -52,7 +54,7 @@ jobs:
           SCHEDULE_ENABLED: ${{ vars.SCHEDULE_ENABLED }}
           MODE_VARIABLE: ${{ vars.TRADING_MODE }}
         run: |
-          echo "실행 방식: $GITHUB_EVENT_NAME $DRY_RUN_ARGS $STOP_LOSS_ARGS"
+          echo "실행 방식: $GITHUB_EVENT_NAME $DRY_RUN_ARGS $STOP_LOSS_ARGS $ONCE_ARGS"
           echo "예약 실행 SCHEDULE_ENABLED=${SCHEDULE_ENABLED:-(없음)}"
           echo "모드 변수 TRADING_MODE=${MODE_VARIABLE:-(없음, 모의투자)}"
           echo "하루 매수 한도 KRW=${MAX_DAILY_BUY_KRW:-(기본값)} USD=${MAX_DAILY_BUY_USD:-(기본값)}"
@@ -64,7 +66,7 @@ jobs:
           KIS_APP_KEY: ${{ secrets.KIS_PAPER_APP_KEY }}
           KIS_APP_SECRET: ${{ secrets.KIS_PAPER_APP_SECRET }}
           KIS_ACCOUNT_NO: ${{ secrets.KIS_PAPER_ACCOUNT_NO }}
-        run: uv run --no-sync python -m trading.engine --market "$MARKET" $DRY_RUN_ARGS $STOP_LOSS_ARGS
+        run: uv run --no-sync python -m trading.engine --market "$MARKET" $DRY_RUN_ARGS $STOP_LOSS_ARGS $ONCE_ARGS
 
       - name: 실행 (실전)
         if: vars.TRADING_MODE == 'live' && github.ref == 'refs/heads/main'
@@ -73,7 +75,7 @@ jobs:
           KIS_APP_KEY: ${{ secrets.KIS_LIVE_APP_KEY }}
           KIS_APP_SECRET: ${{ secrets.KIS_LIVE_APP_SECRET }}
           KIS_ACCOUNT_NO: ${{ secrets.KIS_LIVE_ACCOUNT_NO }}
-        run: uv run --no-sync python -m trading.engine --market "$MARKET" $DRY_RUN_ARGS $STOP_LOSS_ARGS
+        run: uv run --no-sync python -m trading.engine --market "$MARKET" $DRY_RUN_ARGS $STOP_LOSS_ARGS $ONCE_ARGS
 
       - name: 실전은 main 브랜치에서만
         if: vars.TRADING_MODE == 'live' && github.ref != 'refs/heads/main'
