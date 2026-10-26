@@ -5,6 +5,10 @@
 
 일시정지 중에는 손절 매도만 주문하고 나머지 신호는 '주문 안 함'으로 알린다.
 
+손절 확인 실행(stop_loss_only)은 장 마감 전에 한 번 더 돌아 보유 종목의 손절만 본다.
+확정된 일봉 뒤에 지금 가격으로 만든 오늘 봉을 붙여 전략에 넘기고, 손절 매도 신호만 쓴다.
+매수와 일반 매도는 확정된 종가로만 판단하므로 내지 않는다. 알릴 일이 없으면 알림을 보내지 않는다.
+
 오류 처리
 - 스위치, 계좌, 주문 내역 조회가 실패하면 주문하지 않고 오류 알림만 보낸다.
 - 한 종목의 시세나 신호 계산이 실패하면 그 종목만 건너뛰고 경고로 알린다.
@@ -88,6 +92,7 @@ class Engine:
         secrets: Iterable[str] = (),
         check_market_hours: bool = True,
         dry_run: bool = False,
+        stop_loss_only: bool = False,
         index_symbols: Mapping[Market, str] | None = None,
         clock: Callable[[], datetime] = now_utc,
     ) -> None:
@@ -104,13 +109,18 @@ class Engine:
         self.secrets = list(secrets)
         self.check_market_hours = check_market_hours
         self.dry_run = dry_run
+        self.stop_loss_only = stop_loss_only
         # 시장 지수(ETF) 종목. 주면 그 일봉을 MarketContext로 전략에 함께 넘긴다.
         self.index_symbols = dict(index_symbols or {})
         self.clock = clock
 
     def run(self, market: Market) -> RunReport:
         report = RunReport(
-            market=market, mode=self.mode, started_at=self.clock(), dry_run=self.dry_run
+            market=market,
+            mode=self.mode,
+            started_at=self.clock(),
+            dry_run=self.dry_run,
+            stop_loss_only=self.stop_loss_only,
         )
         try:
             self._run(market, report)
@@ -132,6 +142,9 @@ class Engine:
             logger.exception("실행 기록 저장 실패")
             report.warnings.append(self._clean(f"실행 기록 저장 실패: {type(e).__name__}: {e}"))
 
+        if self.stop_loss_only and not self.dry_run and _nothing_to_tell(report):
+            logger.info("손절 확인: 알릴 일이 없어 알림을 보내지 않습니다")
+            return report
         notification = Notification(
             title=report_title(report),
             body=self._clean(report_body(report, names)),
@@ -181,7 +194,10 @@ class Engine:
         positions = self.store.get_positions(market)
         report.warnings += _reconcile(positions, holdings)
 
-        signals, prices = self._collect_signals(market, today, positions, report)
+        if self.stop_loss_only:
+            signals, prices = self._collect_stop_losses(market, today, positions, report)
+        else:
+            signals, prices = self._collect_signals(market, today, positions, report)
         report.signals = signals
         if pause.paused:
             report.skipped += [
@@ -226,18 +242,8 @@ class Engine:
                 s for s in self.strategies if symbol in in_universe or (symbol, s.id) in pos_by_key
             ]
             try:
-                bars = self.broker.get_daily_bars(market, symbol, count)
-                bars = bars[bars.index < pd.Timestamp(today)]  # 오늘(미완성) 봉 제외
-                if bars.empty:
-                    report.warnings.append(f"{symbol}: 일봉이 없어 건너뜁니다")
-                    continue
-                last_day = bars.index[-1].date()
-                missing = self._missing_trading_days(market, last_day, today)
-                if missing > MAX_MISSING_TRADING_DAYS:
-                    report.warnings.append(
-                        f"{symbol}: 마지막 일봉({last_day}) 뒤로 {missing}거래일치가 없어 "
-                        "건너뜁니다(거래정지 확인)"
-                    )
+                bars = self._confirmed_bars(market, symbol, today, count, report)
+                if bars is None:
                     continue
                 found = [
                     sig
@@ -257,6 +263,63 @@ class Engine:
             prices[symbol] = Decimal(str(bars["close"].iloc[-1]))
             signals += found
         return signals, prices
+
+    def _collect_stop_losses(
+        self, market: Market, today: date, positions: list[Position], report: RunReport
+    ) -> tuple[list[Signal], dict[str, Decimal]]:
+        """손절 확인 실행: 보유 종목만 지금 가격을 오늘 봉으로 붙여 손절 신호만 본다."""
+        by_id = {s.id: s for s in self.strategies}
+        held: dict[str, list[Position]] = {}
+        for p in positions:
+            if p.strategy in by_id:
+                held.setdefault(p.symbol, []).append(p)
+        count = max(s.lookback for s in self.strategies) + 1
+
+        signals: list[Signal] = []
+        prices: dict[str, Decimal] = {}
+        for symbol, symbol_positions in held.items():
+            try:
+                bars = self._confirmed_bars(market, symbol, today, count, report)
+                if bars is None:
+                    continue
+                price = self.broker.get_price(market, symbol)
+                bars = _with_today(bars, today, price)
+                found = [
+                    sig
+                    for p in symbol_positions
+                    if (sig := by_id[p.strategy].evaluate(market, symbol, bars, p, NO_CONTEXT))
+                    and sig.stop_loss
+                ]
+            except Exception as e:
+                logger.exception("%s 손절 확인 실패", symbol)
+                report.warnings.append(
+                    self._clean(
+                        f"{symbol}: 시세 오류로 손절 확인을 건너뜁니다 ({type(e).__name__}: {e})"
+                    )
+                )
+                continue
+            prices[symbol] = price
+            signals += found
+        return signals, prices
+
+    def _confirmed_bars(
+        self, market: Market, symbol: str, today: date, count: int, report: RunReport
+    ) -> pd.DataFrame | None:
+        """오늘(미완성) 봉을 뺀 일봉. 없거나 시세가 멈췄으면 경고를 남기고 None."""
+        bars = self.broker.get_daily_bars(market, symbol, count)
+        bars = bars[bars.index < pd.Timestamp(today)]
+        if bars.empty:
+            report.warnings.append(f"{symbol}: 일봉이 없어 건너뜁니다")
+            return None
+        last_day = bars.index[-1].date()
+        missing = self._missing_trading_days(market, last_day, today)
+        if missing > MAX_MISSING_TRADING_DAYS:
+            report.warnings.append(
+                f"{symbol}: 마지막 일봉({last_day}) 뒤로 {missing}거래일치가 없어 "
+                "건너뜁니다(거래정지 확인)"
+            )
+            return None
+        return bars
 
     def _orders_today(self, market: Market, today: date) -> tuple[set[str], Decimal]:
         """오늘 이미 주문이 있는 종목과 오늘 매수 주문 금액. 저장소와 증권사를 모두 본다."""
@@ -334,6 +397,22 @@ class Engine:
 
     def _clean(self, text: str) -> str:
         return redact(text, self.secrets)
+
+
+def _with_today(bars: pd.DataFrame, today: date, price: Decimal) -> pd.DataFrame:
+    """지금 가격으로 만든 오늘 봉(시가=고가=저가=종가)을 붙인다."""
+    value = float(price)
+    row = {c: [0 if c == "volume" else value] for c in bars.columns}
+    return pd.concat([bars, pd.DataFrame(row, index=pd.DatetimeIndex([pd.Timestamp(today)]))])
+
+
+def _nothing_to_tell(report: RunReport) -> bool:
+    """주문, 체결, 경고, 오류가 하나도 없는지. 손절 확인 실행은 이럴 때 알림을 보내지 않는다."""
+    if report.status is RunStatus.ERROR:
+        return False
+    return not (
+        report.orders or report.planned or report.fills or report.skipped or report.warnings
+    )
 
 
 def _mark_paused(report: RunReport, reason: str) -> None:

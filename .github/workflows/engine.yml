@@ -1,4 +1,5 @@
-# 엔진 하루 실행. trade-kr.yml, trade-us.yml이 부른다. 설정 방법은 docs/SETUP.md 4장.
+# 엔진 하루 실행. trade-kr.yml, trade-us.yml과 장 마감 전 손절 확인(stoploss-kr.yml,
+# stoploss-us.yml)이 부른다. 설정 방법은 docs/SETUP.md 4장.
 #
 # 모드는 저장소 변수 TRADING_MODE로 정한다. 값이 live일 때만 실전 키로 실전 계좌에 주문하고,
 # 변수가 없거나 다른 값이면 모의투자 키로 모의투자 계좌를 쓴다. 실전은 main 브랜치 코드로만 돈다.
@@ -11,6 +12,9 @@ on:
         type: string
         required: true
       dry_run:
+        type: boolean
+        default: false
+      stop_loss_only:
         type: boolean
         default: false
 
@@ -26,6 +30,8 @@ jobs:
       MARKET: ${{ inputs.market }}
       # 시험 실행은 장 시간과 상관없이 시세, 신호, 주문 계획까지 계산하고 주문은 내지 않는다
       DRY_RUN_ARGS: ${{ inputs.dry_run && '--dry-run --ignore-hours' || '' }}
+      # 손절 확인 실행은 보유 종목을 지금 가격으로 보고 손절 매도만 낸다
+      STOP_LOSS_ARGS: ${{ inputs.stop_loss_only && '--stop-loss-only' || '' }}
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
       VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
@@ -46,7 +52,7 @@ jobs:
           SCHEDULE_ENABLED: ${{ vars.SCHEDULE_ENABLED }}
           MODE_VARIABLE: ${{ vars.TRADING_MODE }}
         run: |
-          echo "실행 방식: $GITHUB_EVENT_NAME"
+          echo "실행 방식: $GITHUB_EVENT_NAME $DRY_RUN_ARGS $STOP_LOSS_ARGS"
           echo "예약 실행 SCHEDULE_ENABLED=${SCHEDULE_ENABLED:-(없음)}"
           echo "모드 변수 TRADING_MODE=${MODE_VARIABLE:-(없음, 모의투자)}"
           echo "하루 매수 한도 KRW=${MAX_DAILY_BUY_KRW:-(기본값)} USD=${MAX_DAILY_BUY_USD:-(기본값)}"
@@ -58,7 +64,7 @@ jobs:
           KIS_APP_KEY: ${{ secrets.KIS_PAPER_APP_KEY }}
           KIS_APP_SECRET: ${{ secrets.KIS_PAPER_APP_SECRET }}
           KIS_ACCOUNT_NO: ${{ secrets.KIS_PAPER_ACCOUNT_NO }}
-        run: uv run --no-sync python -m trading.engine --market "$MARKET" $DRY_RUN_ARGS
+        run: uv run --no-sync python -m trading.engine --market "$MARKET" $DRY_RUN_ARGS $STOP_LOSS_ARGS
 
       - name: 실행 (실전)
         if: vars.TRADING_MODE == 'live' && github.ref == 'refs/heads/main'
@@ -67,7 +73,7 @@ jobs:
           KIS_APP_KEY: ${{ secrets.KIS_LIVE_APP_KEY }}
           KIS_APP_SECRET: ${{ secrets.KIS_LIVE_APP_SECRET }}
           KIS_ACCOUNT_NO: ${{ secrets.KIS_LIVE_ACCOUNT_NO }}
-        run: uv run --no-sync python -m trading.engine --market "$MARKET" $DRY_RUN_ARGS
+        run: uv run --no-sync python -m trading.engine --market "$MARKET" $DRY_RUN_ARGS $STOP_LOSS_ARGS
 
       - name: 실전은 main 브랜치에서만
         if: vars.TRADING_MODE == 'live' && github.ref != 'refs/heads/main'

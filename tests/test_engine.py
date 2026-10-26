@@ -28,6 +28,7 @@ from trading.risk.planner import ALREADY_ORDERED
 from trading.storage.base import StoreError
 from trading.storage.memory import MemoryStore
 from trading.storage.supabase import SupabaseStore
+from trading.strategies.trend_ma import TrendMA
 
 D = Decimal
 KR = Market.KR
@@ -573,3 +574,101 @@ def test_index_error_is_a_warning_not_a_stop(env: Env):
     assert report.status is RunStatus.OK
     assert any("시장 지수(NOPE)" in w for w in report.warnings)
     assert len(report.orders) == 1  # 시장 필터를 안 쓰는 전략은 그대로 주문
+
+
+# ---- 장 마감 전 손절 확인 ----
+
+MON_1317 = datetime(2026, 10, 26, 13, 17, tzinfo=KST)
+
+
+def stop_check_env(**kw) -> Env:
+    env = make_env(stop_loss_only=True, **kw)
+    env.clock.now = MON_1317
+    return env
+
+
+def test_stop_loss_check_places_only_stop_loss_sells():
+    env = stop_check_env(prices={"005930": 70_000, "000660": 200_000, "035420": 150_000})
+    hold(env, "005930")
+    hold(env, "000660", strategy="b", avg=220_000)
+    env.a.signals = {"005930": Side.SELL, "035420": Side.BUY}
+    env.a.stop_loss = {"005930"}
+    env.b.signals = {"000660": Side.SELL}  # 손절이 아닌 일반 매도
+    report = env.run()
+
+    assert report.status is RunStatus.OK
+    assert [(r.order.symbol, r.order.side) for r in report.orders] == [("005930", Side.SELL)]
+    assert report.skipped == []
+    # 보유 종목만 보고, 마지막 봉은 지금 가격으로 만든 오늘 봉이다
+    assert [(symbol, day) for symbol, day, _ in env.a.seen] == [("005930", MON)]
+    assert [(symbol, day) for symbol, day, _ in env.b.seen] == [("000660", MON)]
+    assert env.notification.title == "[모의투자] 국내 · 완료 · 손절 확인"
+    assert env.notification.urgent is False
+
+
+def test_stop_loss_check_sells_on_todays_price_drop():
+    env = make_env(prices={"005930": 80_000})
+    hold(env, "005930", strategy="trend_ma", avg=80_000)
+    env.broker.set_price(KR, "005930", 70_000)  # 장중 -12.5%
+
+    def engine(**kw) -> Engine:
+        return Engine(
+            broker=env.broker,
+            store=env.store,
+            notifier=env.notifier,
+            strategies=[TrendMA(short=2, long=3, entry_window=1)],
+            universe=env.engine.universe,
+            clock=env.clock,
+            **kw,
+        )
+
+    # 아침 실행은 어제 종가(80,000)로 판단해서 손절하지 않는다
+    assert engine().run(KR).orders == []
+
+    env.clock.now = MON_1317
+    report = engine(stop_loss_only=True).run(KR)
+    [sig] = report.signals
+    assert (sig.stop_loss, sig.price, sig.bar_date) == (True, 70_000, MON)
+    [result] = report.orders
+    o = result.order
+    # 지금 가격보다 3% 낮은 지정가로 판다
+    assert (o.side, o.qty, o.limit_price) == (Side.SELL, 5, 67_900)
+    assert "손절가 72,000" in env.message
+
+
+def test_stop_loss_check_with_nothing_to_do_sends_no_notification():
+    env = stop_check_env()
+    hold(env, "005930")
+    report = env.run()
+    assert report.status is RunStatus.OK
+    assert env.notifier.messages == []
+    assert env.store.runs == [report]  # 기록은 남는다(웹앱 알림함)
+    assert "손절할 종목이 없습니다" in env.store.summaries[-1]
+
+
+def test_stop_loss_check_after_close_is_quiet():
+    env = stop_check_env()
+    env.clock.now = datetime(2026, 10, 26, 15, 40, tzinfo=KST)  # GitHub 예약 실행이 늦은 경우
+    assert env.run().status is RunStatus.SKIPPED
+    assert env.notifier.messages == []
+
+
+def test_stop_loss_check_still_notifies_errors_and_warnings():
+    env = stop_check_env()
+    env.broker.fail_on.add("get_balance")
+    assert env.run().status is RunStatus.ERROR
+    assert env.notification.urgent
+
+    env = stop_check_env()
+    hold(env, "005930")
+    env.broker.fail_on.add("get_price")
+    report = env.run()
+    assert "시세 오류로 손절 확인을 건너뜁니다" in report.warnings[0]
+    assert env.notification.urgent
+
+
+def test_stop_loss_check_dry_run_always_reports():
+    env = stop_check_env(dry_run=True)
+    env.run()
+    assert env.notification.title == "[모의투자] 국내 · 완료 · 손절 확인 · 시험 실행"
+    assert "손절할 종목이 없습니다" in env.message

@@ -4,6 +4,7 @@
   uv run python -m trading.engine --market KR
   uv run python -m trading.engine --market KR --dry-run        # 계산만 하고 주문은 내지 않는다
   uv run python -m trading.engine --market US --ignore-hours   # fake 증권사로 장 시간 무시하고 확인
+  uv run python -m trading.engine --market KR --stop-loss-only # 장 마감 전 손절만 확인
 
 fake 증권사와 시험 실행은 메모리 저장소와 화면 출력만 쓴다.
 KIS는 Supabase 저장소와 웹 푸시(VAPID 키가 있으면)를 쓴다.
@@ -32,6 +33,11 @@ def main(argv: list[str] | None = None) -> int:
         "--ignore-hours",
         action="store_true",
         help="fake 증권사나 시험 실행(--dry-run)에서만: 휴장일/주문 시간 검사를 건너뛴다",
+    )
+    parser.add_argument(
+        "--stop-loss-only",
+        action="store_true",
+        help="장 마감 전 손절 확인: 보유 종목을 지금 가격으로 보고 손절 매도만 낸다(매수 안 함)",
     )
     parser.add_argument("--seed", type=int, default=0, help="fake 증권사 가짜 데이터 시드")
     args = parser.parse_args(argv)
@@ -66,6 +72,7 @@ def main(argv: list[str] | None = None) -> int:
         secrets=settings.secret_values(),
         check_market_hours=not args.ignore_hours,
         dry_run=args.dry_run,
+        stop_loss_only=args.stop_loss_only,
     )
     report = engine.run(market)
     # 오류나 알림 실패는 종료 코드로도 알린다(GitHub Actions 실패 표시)

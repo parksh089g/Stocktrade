@@ -43,14 +43,43 @@ def test_schedule_runs_once_each_weekday_inside_order_window(name, market, week)
         assert close - t >= timedelta(hours=5)
 
 
-def test_trade_workflows_run_engine_for_their_market():
-    for name, market in [("trade-kr.yml", "KR"), ("trade-us.yml", "US")]:
-        text = read(name)
-        assert "uses: ./.github/workflows/engine.yml" in text
-        assert f"market: {market}" in text
-        assert "vars.SCHEDULE_ENABLED == 'true'" in text  # 준비 전에는 예약 실행이 돌지 않는다
-        assert "default: true" in text  # 손으로 실행은 기본이 시험 실행
-        assert "group: trade\n" in text
+@pytest.mark.parametrize(
+    ("name", "market"), [("stoploss-kr.yml", Market.KR), ("stoploss-us.yml", Market.US)]
+)
+@pytest.mark.parametrize("week", WEEKS)
+def test_stop_loss_check_runs_well_after_morning_and_before_close(name, market, week):
+    local = [t.astimezone(market.timezone) for t in run_times(read(name), week)]
+    assert sorted(t.weekday() for t in local) == [0, 1, 2, 3, 4]
+    for t in local:
+        start = datetime.combine(t.date(), market.order_start_time, tzinfo=t.tzinfo)
+        close = datetime.combine(t.date(), market.close_time, tzinfo=t.tzinfo)
+        assert t - start >= timedelta(hours=3)  # 아침 실행 뒤 장중 가격을 본다
+        assert close - t >= timedelta(hours=2)  # 예약 실행이 늦어도 마감 전에 돌 여유
+
+
+@pytest.mark.parametrize(
+    ("name", "market", "stop_loss_only"),
+    [
+        ("trade-kr.yml", "KR", False),
+        ("trade-us.yml", "US", False),
+        ("stoploss-kr.yml", "KR", True),
+        ("stoploss-us.yml", "US", True),
+    ],
+)
+def test_workflows_run_engine_for_their_market(name, market, stop_loss_only):
+    text = read(name)
+    assert "uses: ./.github/workflows/engine.yml" in text
+    assert f"market: {market}" in text
+    assert "vars.SCHEDULE_ENABLED == 'true'" in text  # 준비 전에는 예약 실행이 돌지 않는다
+    assert "default: true" in text  # 손으로 실행은 기본이 시험 실행
+    assert "group: trade\n" in text
+    assert ("stop_loss_only: true" in text) is stop_loss_only
+
+
+def test_engine_passes_stop_loss_only_to_both_modes():
+    text = read("engine.yml")
+    assert "STOP_LOSS_ARGS: ${{ inputs.stop_loss_only && '--stop-loss-only' || '' }}" in text
+    assert text.count("$DRY_RUN_ARGS $STOP_LOSS_ARGS\n") == 2
 
 
 def steps(text: str) -> list[str]:

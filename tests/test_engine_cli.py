@@ -36,3 +36,11 @@ def test_ignore_hours_only_with_fake_or_dry_run(monkeypatch, capsys):
     # 시험 실행이면 장 시간 검사를 끌 수 있다(여기서는 KIS 설정이 없어 설정 오류로 끝난다)
     assert main(["--market", "KR", "--ignore-hours", "--dry-run"]) == 2
     assert "KIS_APP_KEY" in capsys.readouterr().out
+
+
+def test_cli_stop_loss_only(capsys):
+    args = ["--market", "KR", "--ignore-hours", "--dry-run", "--stop-loss-only", "--seed", "11"]
+    assert main(args) == 0
+    out = capsys.readouterr().out
+    assert "· 완료 · 손절 확인 · 시험 실행" in out
+    assert "손절할 종목이 없습니다" in out

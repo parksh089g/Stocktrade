@@ -48,6 +48,8 @@ class Strategy(ABC):
         """마지막 행까지의 완성된 일봉을 보고 신호를 낸다.
 
         bars의 마지막 행은 확정된 일봉이어야 한다(장중 미완성 봉은 엔진이 빼고 넘긴다).
+        장 마감 전 손절 확인 실행만 예외로, 엔진이 지금 가격으로 만든 오늘 봉을 붙여 넘기고
+        돌려받은 신호 중 손절(stop_loss) 매도만 쓴다.
         position은 이 전략이 들고 있는 그 종목 보유분, 없으면 None.
         """
         if position is not None and position.strategy != self.id:

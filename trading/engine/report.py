@@ -49,6 +49,7 @@ class RunReport(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     dry_run: bool = False  # 시험 실행: 계산만 하고 주문은 내지 않았다
     planned: list[Order] = Field(default_factory=list)  # 시험 실행에서 냈을 주문
+    stop_loss_only: bool = False  # 장 마감 전 손절 확인 실행: 보유 종목의 손절 매도만 봤다
     notify_failed: bool = False  # 알림을 못 보냈으면 실행 자체를 실패로 표시해 GitHub이 알리게 한다
 
 
@@ -71,9 +72,11 @@ _ORDER_STATUS = {
 
 
 def report_title(report: RunReport) -> str:
-    """알림 제목. 예: [모의투자] 국내 · 완료"""
+    """알림 제목. 예: [모의투자] 국내 · 완료, [모의투자] 미국 · 완료 · 손절 확인"""
     mode = _MODE.get(report.mode, report.mode)
     title = f"[{mode}] {report.market.label} · {_STATUS[report.status]}"
+    if report.stop_loss_only:
+        title += " · 손절 확인"
     return f"{title} · 시험 실행" if report.dry_run else title
 
 
@@ -132,7 +135,9 @@ def report_body(report: RunReport, names: Mapping[str, str] | None = None) -> st
         lines.extend(f" · {w}" for w in report.warnings)
 
     if report.status is RunStatus.OK and not report.signals and not report.fills:
-        lines.append("오늘은 신호가 없습니다.")
+        lines.append(
+            "손절할 종목이 없습니다." if report.stop_loss_only else "오늘은 신호가 없습니다."
+        )
     return "\n".join(lines)
 
 

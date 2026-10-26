@@ -34,8 +34,8 @@ uv run python -m trading.backtest.compare                                # 개�
 
 ## 하루 실행
 
-GitHub Actions가 평일 하루 한 번씩 돌린다(`.github/workflows/trade-kr.yml`, `trade-us.yml`,
-공통 단계는 `engine.yml`). 준비는 [docs/SETUP.md](docs/SETUP.md) 4장. 모드는 저장소 변수 `TRADING_MODE`로
+GitHub Actions가 평일마다 시장별로 돌린다(`.github/workflows/trade-kr.yml`, `trade-us.yml`,
+장 마감 전 손절 확인 `stoploss-kr.yml`, `stoploss-us.yml`, 공통 단계는 `engine.yml`). 준비는 [docs/SETUP.md](docs/SETUP.md) 4장. 모드는 저장소 변수 `TRADING_MODE`로
 정하고, 없으면 모의투자다. 올릴 때마다 `ci.yml`이 테스트와 린트를 돌린다.
 
 로컬에서는 fake 증권사로 흐름을 확인한다.
@@ -43,6 +43,7 @@ GitHub Actions가 평일 하루 한 번씩 돌린다(`.github/workflows/trade-kr
 ```bash
 uv run python -m trading.engine --market KR
 uv run python -m trading.engine --market US --ignore-hours --seed 11   # 장 시간과 상관없이 흐름 확인
+uv run python -m trading.engine --market KR --ignore-hours --dry-run --stop-loss-only  # 손절 확인
 ```
 
 흐름: 스위치 확인 → 지난 주문 체결 반영 → (일시정지/휴장/장 마감이면 끝) → 계좌 조회 → 시세와 신호
