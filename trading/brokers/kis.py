@@ -475,9 +475,14 @@ class KisBroker(BrokerAdapter):
 # ---- 응답 해석 (순수 함수: 테스트하기 쉽게 밖으로 뺐다) ----
 
 
+def _is_amend_row(row: dict[str, Any]) -> bool:
+    """정정/취소 주문 줄인지. 새 주문 줄은 원주문번호가 비어 있거나 0000000000으로 온다."""
+    return bool(str(row.get("orgn_odno") or "").strip().lstrip("0"))
+
+
 def parse_kr_order(row: dict[str, Any]) -> OrderResult | None:
     """국내 일별주문체결 한 줄 → OrderResult. 정정/취소 주문 줄은 건너뛴다."""
-    if str(row.get("orgn_odno", "")).strip():
+    if _is_amend_row(row):
         return None
     qty = int(_dec(row.get("ord_qty")))
     if qty <= 0:
@@ -510,7 +515,7 @@ def parse_kr_order(row: dict[str, Any]) -> OrderResult | None:
 
 def parse_us_order(row: dict[str, Any]) -> OrderResult | None:
     """미국 주문체결내역 한 줄 → OrderResult. 정정/취소 주문 줄은 건너뛴다."""
-    if str(row.get("orgn_odno", "")).strip():
+    if _is_amend_row(row):
         return None
     qty = int(_dec(row.get("ft_ord_qty")))
     if qty <= 0:

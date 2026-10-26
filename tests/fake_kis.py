@@ -195,7 +195,7 @@ class FakeKis:
                 "ord_dt": self.order_date,
                 "ord_tmd": "084000",
                 "odno": odno,
-                "orgn_odno": "",
+                "orgn_odno": "0000000000",  # 모의투자 실제 응답처럼 새 주문도 0으로 채움
                 "pdno": body["PDNO"],
                 "sll_buy_dvsn_cd": "02" if tr_id.endswith("0012U") else "01",
                 "ord_qty": body["ORD_QTY"],

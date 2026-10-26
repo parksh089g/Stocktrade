@@ -349,7 +349,14 @@ def test_parse_kr_order_fields():
         None,
     )
     assert r.created_at == datetime(2026, 10, 26, 0, 1, 2, tzinfo=UTC)
-    assert parse_kr_order(kr_row(orgn_odno="0000000001")) is None  # 정정/취소 주문 줄
+
+
+@pytest.mark.parametrize(("orgn_odno", "is_new"), [("", True), ("0000000000", True), (None, True),
+                                                   ("0000014181", False)])  # fmt: skip
+def test_parse_kr_order_skips_only_amend_rows(orgn_odno, is_new):
+    # 모의투자는 새 주문 줄에도 원주문번호를 0000000000으로 채워 보낸다 (2026-10-26 확인)
+    r = parse_kr_order(kr_row(orgn_odno=orgn_odno))
+    assert (r is not None) is is_new
 
 
 def test_parse_us_order():
@@ -366,6 +373,8 @@ def test_parse_us_order():
     assert r.created_at == datetime(2026, 10, 26, 13, 40, tzinfo=UTC)  # 한국 22:40
     no_kst = parse_us_order(row | {"dmst_ord_dt": "", "thco_ord_tmd": ""})
     assert no_kst.created_at == datetime(2026, 10, 26, 13, 40, tzinfo=UTC)  # 뉴욕 09:40
+    assert parse_us_order(row | {"orgn_odno": "0000000000"}) is not None  # 새 주문
+    assert parse_us_order(row | {"orgn_odno": "0000000008"}) is None  # 정정/취소 주문 줄
 
 
 # ---- 엔진과 함께 ----
