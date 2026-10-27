@@ -15,6 +15,7 @@
 - trading/engine: 하루 실행 흐름 (스위치 확인 → 시세 → 신호 → 리스크 → 주문 → 기록 → 알림)
 - trading/notify, trading/storage, trading/backtest
 - webapp/: 폰 웹앱
+- scheduler/: 예약 실행을 정시에 부르는 Cloudflare Worker(GitHub 예약이 늦을 때 대비)
 - .github/workflows/: trade-kr.yml, trade-us.yml
 
 ## 규칙

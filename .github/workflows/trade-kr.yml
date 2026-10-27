@@ -15,6 +15,10 @@ on:
         description: 시험 실행(계산만 하고 주문하지 않음)
         type: boolean
         default: true
+      scheduled:
+        description: 예약 실행으로 돌리기(Cloudflare 예약이 쓴다. 손으로 실행할 때는 끈 채로 둔다)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -26,10 +30,12 @@ concurrency:
 
 jobs:
   run:
-    # 예약 실행은 저장소 변수 SCHEDULE_ENABLED가 true일 때만 돈다. 손으로 실행은 언제나 된다.
-    if: github.event_name == 'workflow_dispatch' || vars.SCHEDULE_ENABLED == 'true'
+    # 예약 실행(GitHub 예약, Cloudflare 예약)은 저장소 변수 SCHEDULE_ENABLED가 true일 때만 돈다.
+    # 손으로 실행은 언제나 된다.
+    if: (github.event_name == 'workflow_dispatch' && inputs.scheduled != true) || vars.SCHEDULE_ENABLED == 'true'
     uses: ./.github/workflows/engine.yml
     with:
       market: KR
       dry_run: ${{ inputs.dry_run == true }}
+      scheduled: ${{ github.event_name == 'schedule' || inputs.scheduled == true }}
     secrets: inherit

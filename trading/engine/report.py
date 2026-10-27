@@ -50,6 +50,7 @@ class RunReport(BaseModel):
     dry_run: bool = False  # 시험 실행: 계산만 하고 주문은 내지 않았다
     planned: list[Order] = Field(default_factory=list)  # 시험 실행에서 냈을 주문
     stop_loss_only: bool = False  # 장 마감 전 손절 확인 실행: 보유 종목의 손절 매도만 봤다
+    day_over: bool = False  # 휴장일이나 장 마감 후라 오늘은 더 할 일이 없다
     notify_failed: bool = False  # 알림을 못 보냈으면 실행 자체를 실패로 표시해 GitHub이 알리게 한다
 
 

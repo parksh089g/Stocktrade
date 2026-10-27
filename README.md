@@ -38,6 +38,10 @@ GitHub Actions가 평일마다 시장별로 돌린다(`.github/workflows/trade-k
 장 마감 전 손절 확인 `stoploss-kr.yml`, `stoploss-us.yml`, 공통 단계는 `engine.yml`). 준비는 [docs/SETUP.md](docs/SETUP.md) 4장. 모드는 저장소 변수 `TRADING_MODE`로
 정하고, 없으면 모의투자다. 올릴 때마다 `ci.yml`이 테스트와 린트를 돌린다.
 
+GitHub 예약은 몇 시간씩 늦을 때가 있어서, Cloudflare Worker(`scheduler/`)가 정해진 시각에 이 워크플로들을
+부른다. GitHub 예약은 대비용으로 남겨 두고, 엔진이 하루 한 번만 돌게 막는다. 준비는 SETUP.md 5장.
+Worker 테스트는 `node --test scheduler/worker.test.js`.
+
 로컬에서는 fake 증권사로 흐름을 확인한다.
 
 ```bash

@@ -507,6 +507,8 @@ def test_kis_check_order_test_paper(check_env, capsys):
 
 def test_kis_check_order_test_us(check_env, capsys):
     check_env.us_bars["AAPL"] = us_bar_rows(date(2026, 3, 2), [180.0] * 150)
+    # 도구는 미국 주문을 뉴욕 날짜로 조회한다(한국 아침에는 한국 날짜와 하루 다르다)
+    check_env.order_date = datetime.now(US.timezone).strftime("%Y%m%d")
     assert kis_check.main(["--market", "US", "--order-test", "US"]) == 0
     out = capsys.readouterr().out
     assert "1주 지정가 144.40" in out  # 180.50 × 0.8

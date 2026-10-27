@@ -21,3 +21,5 @@ jobs:
       - run: uv sync --locked
       - run: uv run --no-sync ruff check
       - run: uv run --no-sync pytest
+      # 예약 실행을 부르는 Cloudflare Worker(scheduler/). 러너에 들어 있는 Node로 돌린다.
+      - run: node --test scheduler/worker.test.js

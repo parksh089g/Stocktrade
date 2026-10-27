@@ -1,0 +1,19 @@
+# 예약 실행을 정시에 부르는 Cloudflare Worker. 설정 방법은 docs/SETUP.md 5장.
+# 비밀값 GITHUB_TOKEN은 여기에 쓰지 않고 Cloudflare 화면에서 넣는다.
+name = "stocktrade-scheduler"
+main = "worker.js"
+compatibility_date = "2026-09-01"
+# 인터넷 주소로는 열지 않는다. 예약으로만 돈다.
+workers_dev = false
+preview_urls = false
+
+[triggers]
+# worker.js 실행 시각들의 '분'마다 깨어나 표에서 지금 시각에 맞는 워크플로만 부른다.
+# 무료 플랜은 계정당 예약이 5개까지라 실행마다 하나씩 두지 않았다.
+crons = ["17,40,47 * * * *"]
+
+[vars]
+GITHUB_REPO = "parksh089g/Stocktrade"
+
+[observability]
+enabled = true

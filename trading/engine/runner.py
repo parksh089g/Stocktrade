@@ -9,9 +9,9 @@
 확정된 일봉 뒤에 지금 가격으로 만든 오늘 봉을 붙여 전략에 넘기고, 손절 매도 신호만 쓴다.
 매수와 일반 매도는 확정된 종가로만 판단하므로 내지 않는다. 알릴 일이 없으면 알림을 보내지 않는다.
 
-하루 한 번(once_per_day)은 GitHub 예약 실행이 늦거나 빠질 때를 대비해 같은 실행을 두 번
-예약하기 위한 것이다. 오늘 같은 종류의 실행이 완료(또는 일시정지)로 끝났으면 기록과 알림 없이
-끝낸다. 오류로 끝났으면 다시 돈다.
+하루 한 번(once_per_day)은 예약 실행을 여러 곳(Cloudflare 예약, GitHub 예약)에서 여러 번
+부르기 위한 것이다. 오늘 같은 종류의 실행이 완료(또는 일시정지)로 끝났거나 휴장일, 장 마감 후라
+더 할 일이 없으면 다음 실행은 기록과 알림 없이 끝낸다. 오류로 끝났으면 다시 돈다.
 
 오류 처리
 - 스위치, 계좌, 주문 내역 조회가 실패하면 주문하지 않고 오류 알림만 보낸다.
@@ -153,7 +153,7 @@ class Engine:
         except Exception as e:
             logger.exception("실행 기록 저장 실패")
             report.warnings.append(self._clean(f"실행 기록 저장 실패: {type(e).__name__}: {e}"))
-        if report.status in (RunStatus.OK, RunStatus.PAUSED):
+        if report.status in (RunStatus.OK, RunStatus.PAUSED) or report.day_over:
             self._mark_done(market, today)
 
         if self.stop_loss_only and not self.dry_run and _nothing_to_tell(report):
@@ -190,6 +190,7 @@ class Engine:
             if not self.broker.is_trading_day(market, today):
                 report.status = RunStatus.SKIPPED
                 report.message = f"휴장일입니다({today})"
+                report.day_over = True
                 return
             local_time = now.astimezone(market.timezone).time()
             if local_time < market.order_start_time:
@@ -201,6 +202,7 @@ class Engine:
             if local_time >= market.close_time:
                 report.status = RunStatus.SKIPPED
                 report.message = "장 마감 후라 주문하지 않습니다"
+                report.day_over = True
                 return
 
         balance = self.broker.get_balance(market)

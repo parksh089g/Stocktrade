@@ -17,6 +17,9 @@ on:
       stop_loss_only:
         type: boolean
         default: false
+      scheduled:
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -32,8 +35,9 @@ jobs:
       DRY_RUN_ARGS: ${{ inputs.dry_run && '--dry-run --ignore-hours' || '' }}
       # 손절 확인 실행은 보유 종목을 지금 가격으로 보고 손절 매도만 낸다
       STOP_LOSS_ARGS: ${{ inputs.stop_loss_only && '--stop-loss-only' || '' }}
-      # 예약 실행은 백업으로 두 번 예약해 두고, 오늘 이미 끝났으면 기록과 알림 없이 끝낸다
-      ONCE_ARGS: ${{ github.event_name == 'schedule' && '--once-per-day' || '' }}
+      # 예약 실행은 여러 곳(Cloudflare 예약, GitHub 예약과 그 백업)에서 부르고,
+      # 오늘 이미 끝났으면 기록과 알림 없이 끝낸다
+      ONCE_ARGS: ${{ inputs.scheduled && '--once-per-day' || '' }}
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
       VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}

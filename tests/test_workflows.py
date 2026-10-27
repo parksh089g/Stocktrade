@@ -8,7 +8,10 @@ import pytest
 
 from trading.core.models import Market
 
-WORKFLOWS = Path(__file__).resolve().parent.parent / ".github" / "workflows"
+ROOT = Path(__file__).resolve().parent.parent
+WORKFLOWS = ROOT / ".github" / "workflows"
+SCHEDULER = ROOT / "scheduler"
+SCHEDULED_WORKFLOWS = ["trade-kr.yml", "trade-us.yml", "stoploss-kr.yml", "stoploss-us.yml"]
 CRON = re.compile(r'cron: "(\d+) (\d+) \* \* (\d)-(\d)"')
 # 겨울(표준시)과 여름(서머타임) 한 주씩. 둘 다 일요일(UTC)부터 시작한다.
 WEEKS = [datetime(2026, 1, 11, tzinfo=UTC), datetime(2026, 7, 12, tzinfo=UTC)]
@@ -85,7 +88,13 @@ def test_workflows_run_engine_for_their_market(name, market, stop_loss_only):
     text = read(name)
     assert "uses: ./.github/workflows/engine.yml" in text
     assert f"market: {market}" in text
-    assert "vars.SCHEDULE_ENABLED == 'true'" in text  # 준비 전에는 예약 실행이 돌지 않는다
+    # 준비 전에는 예약 실행(GitHub 예약, Cloudflare 예약)이 돌지 않는다
+    gate = (
+        "if: (github.event_name == 'workflow_dispatch' && inputs.scheduled != true)"
+        " || vars.SCHEDULE_ENABLED == 'true'\n"
+    )
+    assert gate in text
+    assert "scheduled: ${{ github.event_name == 'schedule' || inputs.scheduled == true }}" in text
     assert "default: true" in text  # 손으로 실행은 기본이 시험 실행
     assert "group: trade\n" in text
     assert ("stop_loss_only: true" in text) is stop_loss_only
@@ -95,8 +104,48 @@ def test_engine_passes_run_options_to_both_modes():
     text = read("engine.yml")
     assert "STOP_LOSS_ARGS: ${{ inputs.stop_loss_only && '--stop-loss-only' || '' }}" in text
     # 하루 한 번은 예약 실행에만. 손으로 실행은 언제나 돈다.
-    assert "ONCE_ARGS: ${{ github.event_name == 'schedule' && '--once-per-day' || '' }}" in text
+    assert "ONCE_ARGS: ${{ inputs.scheduled && '--once-per-day' || '' }}" in text
     assert text.count("$DRY_RUN_ARGS $STOP_LOSS_ARGS $ONCE_ARGS\n") == 2
+
+
+# ---- Cloudflare 예약(scheduler/) ----
+
+
+def test_cloudflare_schedule_matches_github_schedule():
+    worker = (SCHEDULER / "worker.js").read_text()
+    cloudflare = set(re.findall(r'\["([\w-]+\.yml)", "([^"]+)"\]', worker))
+    github = {
+        (name, cron)
+        for name in SCHEDULED_WORKFLOWS
+        for cron in re.findall(r'cron: "([^"]+)"', read(name))
+    }
+    assert len(github) == 6
+    assert cloudflare == github
+
+
+def test_cloudflare_wakes_up_exactly_at_scheduled_minutes():
+    worker = (SCHEDULER / "worker.js").read_text()
+    minutes = {int(cron.split()[0]) for cron in re.findall(r'\["[\w-]+\.yml", "([^"]+)"\]', worker)}
+    [trigger] = re.findall(r'crons = \["([^"]+)"\]', (SCHEDULER / "wrangler.toml").read_text())
+    minute, *rest = trigger.split()
+    assert rest == ["*", "*", "*", "*"]
+    assert {int(m) for m in minute.split(",")} == minutes
+
+
+@pytest.mark.parametrize("name", SCHEDULED_WORKFLOWS)
+def test_cloudflare_sends_inputs_the_workflow_accepts(name):
+    worker = (SCHEDULER / "worker.js").read_text()
+    assert 'const INPUTS = { scheduled: "true", dry_run: "false" };' in worker
+    assert 'ref: "main"' in worker  # 실전은 main 브랜치에서만 돈다
+    dispatch = read(name).split("  workflow_dispatch:\n", 1)[1].split("\npermissions:", 1)[0]
+    # 워크플로에 없는 입력값을 보내면 GitHub이 실행 요청을 거부한다
+    assert set(re.findall(r"^      (\w+):$", dispatch, re.M)) == {"scheduled", "dry_run"}
+
+
+def test_cloudflare_worker_has_no_web_address_or_secret_in_config():
+    config = (SCHEDULER / "wrangler.toml").read_text()
+    assert "workers_dev = false" in config
+    assert "GITHUB_TOKEN" not in re.sub(r"#.*", "", config)
 
 
 def steps(text: str) -> list[str]:

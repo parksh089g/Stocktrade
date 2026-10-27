@@ -103,11 +103,12 @@
   또는 13:47(서머타임), 한국 시간 화~토 02:47. 보유 종목을 지금 가격으로 보고 손절 매도만 낸다(매수 안 함).
   알릴 일(주문, 체결, 경고, 오류)이 없으면 알림을 보내지 않고 기록만 남긴다.
 
-GitHub 예약 실행은 몇 분에서 몇 시간 늦게 시작할 수 있고, 붐빌 때는 건너뛰기도 한다(2026-10-26 국내
-08:40 실행이 빠졌다). 그래서 아침 실행은 한 시간쯤 뒤에 백업으로 한 번 더 예약해 두었다. 먼저 도는 쪽이
-완료(또는 일시정지)로 끝나면 나머지는 기록과 알림 없이 끝나고, 오류로 끝났으면 백업이 다시 돈다.
-손으로 실행은 이와 상관없이 언제나 돈다. 엔진이 휴장일과 장 시간을 다시 확인하고, 같은 날 같은 종목에는
-주문을 한 번만 낸다.
+GitHub 예약 실행은 몇 분에서 몇 시간 늦게 시작할 수 있고, 붐빌 때는 건너뛰기도 한다(2026-10-26에는
+2~6시간 늦어 미국 실행이 모두 장 마감 뒤에 돌았다). 그래서 5장의 Cloudflare 예약이 같은 시각에 정시로
+부르고, GitHub 예약은 대비용으로 남겨 두었다. 아침 실행은 한 시간쯤 뒤에 백업으로 한 번 더 부른다.
+예약 실행은 그날 먼저 도는 쪽이 완료(또는 일시정지)로 끝났거나 휴장일, 장 마감 후라 더 할 일이 없으면
+나머지는 기록과 알림 없이 끝나고, 오류로 끝났으면 다음 실행이 다시 돈다. 손으로 실행은 이와 상관없이
+언제나 돈다. 엔진이 휴장일과 장 시간을 다시 확인하고, 같은 날 같은 종목에는 주문을 한 번만 낸다.
 
 먼저 1장(Supabase)을 끝낸다. 표가 하나 늘었으니(`engine_cache`), 이미 실행했어도 `supabase/schema.sql`을
 한 번 더 실행한다. 여러 번 실행해도 괜찮다.
@@ -136,7 +137,7 @@ GitHub 예약 실행은 몇 분에서 몇 시간 늦게 시작할 수 있고, �
 
 | 이름 | 값 | 뜻 |
 |---|---|---|
-| `SCHEDULE_ENABLED` | `true` | 매일 예약 실행을 켠다. 없거나 다른 값이면 예약 실행이 돌지 않는다(손으로 실행은 된다) |
+| `SCHEDULE_ENABLED` | `true` | 매일 예약 실행(GitHub 예약, Cloudflare 예약)을 켠다. 없거나 다른 값이면 예약 실행이 돌지 않는다(손으로 실행은 된다) |
 | `TRADING_MODE` | 넣지 않는다 | 없으면 모의투자다. 정확히 `live`일 때만 실전 키로 실전 계좌에 주문한다 |
 | `MAX_DAILY_BUY_KRW`, `MAX_DAILY_BUY_USD` | 예: `3000000`, `2000` | (선택) 하루 매수 금액 상한 |
 
@@ -146,7 +147,7 @@ GitHub 예약 실행은 몇 분에서 몇 시간 늦게 시작할 수 있고, �
 ### 4-3. 손으로 시험 실행
 
 1. 저장소 **Actions** 탭 → 왼쪽 **trade-kr** → 오른쪽 **Run workflow**
-2. **시험 실행** 체크가 켜진 그대로 **Run workflow**를 누른다. 장 시간과 상관없이 잔고, 시세, 신호,
+2. **시험 실행** 체크가 켜진 그대로(**예약 실행으로 돌리기**는 꺼진 그대로) **Run workflow**를 누른다. 장 시간과 상관없이 잔고, 시세, 신호,
    주문 계획까지 계산하고 주문은 내지 않는다. 기록도 Supabase에 남기지 않는다.
 3. 실행을 눌러 **run / 실행 (모의투자)** 단계의 로그를 본다. `[모의투자] 국내 · 완료 · 시험 실행`과
    신호(없으면 "오늘은 신호가 없습니다")가 나오고 녹색 체크면 된다.
@@ -164,7 +165,8 @@ GitHub 예약 실행은 몇 분에서 몇 시간 늦게 시작할 수 있고, �
 
 - 주문만 멈추기: 일시정지 스위치(M7 웹앱. 그 전에는 Supabase **Table Editor**의 `trading_switch`에서
   `paused`를 `true`로). 손절 매도는 계속 나간다.
-- 실행 자체를 멈추기: 변수 `SCHEDULE_ENABLED`를 지우거나 `false`로 바꾼다.
+- 실행 자체를 멈추기: 변수 `SCHEDULE_ENABLED`를 지우거나 `false`로 바꾼다. Cloudflare 예약이 불러도
+  돌지 않는다.
 
 ### 4-6. 실전 전환 (M7 뒤에)
 
@@ -175,5 +177,59 @@ GitHub 예약 실행은 몇 분에서 몇 시간 늦게 시작할 수 있고, �
 실전은 main 브랜치 코드로만 돈다. 모의투자와 실전 기록은 Supabase에 따로 저장되고, KIS 토큰도 모드별로
 따로 암호화해 Supabase `engine_cache`에 둔다(토큰은 하루 유효, 실행마다 새로 받지 않는다).
 
-GitHub 무료 요금제의 비공개 저장소는 Actions를 한 달 2,000분까지 쓸 수 있다. 실행 한 번에 1~2분이라
-하루 두 번이면 한 달 100분 안쪽이다.
+GitHub 무료 요금제의 비공개 저장소는 Actions를 한 달 2,000분까지 쓸 수 있다. 실행 한 번에 1~2분이고,
+예약 실행이 하루 최대 12번(Cloudflare 6번, GitHub 6번. 이미 끝났으면 바로 끝남)이라 한 달 400분 안쪽이다.
+
+## 5. Cloudflare 예약 (정시 실행)
+
+GitHub 예약은 몇 시간씩 늦을 때가 있어서, Cloudflare Worker(`scheduler/`)가 4장의 예약 시각에 맞춰
+GitHub에 실행을 요청한다. 손으로 **Run workflow**를 누른 것과 같아서 바로 시작한다. Cloudflare 무료
+요금제로 충분하다. 4장을 먼저 끝낸다.
+
+### 5-1. GitHub 토큰 만들기
+
+Worker가 실행을 요청할 때 쓰는 토큰이다. 이 저장소의 Actions 실행 권한만 준다.
+
+1. GitHub 오른쪽 위 프로필 → **Settings > Developer settings > Personal access tokens > Fine-grained
+   tokens** → **Generate new token**
+2. **Token name**: `stocktrade-scheduler`, **Expiration**: 1년 정도. 만료일을 달력에 적어 둔다
+   (만료되면 Cloudflare 예약이 실패하고, 늦을 수 있는 GitHub 예약만 돈다).
+3. **Repository access**: **Only select repositories** → 이 저장소 하나
+4. **Permissions > Repository permissions > Actions**: **Read and write**. 다른 권한은 주지 않는다
+   (Metadata 읽기는 자동으로 붙는다).
+5. **Generate token**을 누르고 토큰을 복사해 바로 5-2의 Cloudflare 화면에 붙여 넣는다. 파일이나 채팅에는
+   붙여 넣지 않는다.
+
+### 5-2. Worker 올리기
+
+1. 이 PC에서 Cloudflare에 로그인한다. 브라우저가 열리면 허용을 누른다.
+   ```bash
+   cd scheduler
+   npx wrangler login
+   ```
+2. 올린다. 예약(`wrangler.toml`의 `crons`)과 저장소 이름(`GITHUB_REPO`)도 함께 올라간다.
+   ```bash
+   npx wrangler deploy
+   ```
+3. Cloudflare 화면 **Workers & Pages** → `stocktrade-scheduler` → **Settings > Variables and Secrets** →
+   **Add** → Type **Secret**, 이름 `GITHUB_TOKEN`, 값은 5-1의 토큰 → **Deploy**.
+   비밀값은 다시 `wrangler deploy`를 해도 지워지지 않는다.
+
+Worker는 인터넷 주소 없이 예약으로만 돈다. 실행 시각들의 '분'(17, 40, 47분)마다 깨어나서 시각이 맞을
+때만 GitHub에 요청한다(무료 요금제는 계정당 예약이 5개까지라 실행마다 따로 두지 않았다).
+예약 시각을 바꿀 때는 워크플로 파일의 cron과 `scheduler/worker.js`의 표를 같이 바꾸고 다시 올린다
+(테스트가 둘이 같은지 확인한다).
+
+### 5-3. 확인
+
+- 다음 예약 시각이 지나면 GitHub **Actions** 탭에 그 시각에 시작한 실행이 생긴다. 이벤트는
+  `workflow_dispatch`이고, **설정 표시** 단계에 `실행 방식: workflow_dispatch --once-per-day`가 나온다.
+  나중에 GitHub 예약이 늦게 돌면 "오늘 이미 실행해서 건너뜁니다"로 바로 끝난다.
+- Cloudflare 기록: Worker 화면 **Observability**(또는 **Logs**)에 `trade-kr.yml 실행 요청`이 남는다.
+  `실행 요청 실패: HTTP 401`은 토큰 만료, `HTTP 403`이나 `404`는 토큰 권한이나 저장소 선택이 틀린 것이다.
+
+### 5-4. 멈추기
+
+- 예약 실행 전체를 멈추려면 4-5처럼 `SCHEDULE_ENABLED`를 끈다. Cloudflare가 요청해도 실행이 돌지 않는다.
+- Cloudflare 예약만 멈추려면 Worker 화면 **Settings > Trigger Events**에서 Cron을 지우거나 Worker를
+  지운다. GitHub 예약은 그대로 돈다.

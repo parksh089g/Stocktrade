@@ -743,6 +743,31 @@ def test_stop_loss_check_is_counted_separately():
     assert check.run(KR).status is RunStatus.SKIPPED
 
 
+@pytest.mark.parametrize(
+    ("now", "day_over"),
+    [
+        (datetime(2026, 10, 26, 15, 30, tzinfo=KST), True),  # 장 마감 후
+        (datetime(2026, 10, 26, 7, 50, tzinfo=KST), False),  # 주문 가능 시간 전: 나중에 다시 돈다
+    ],
+)
+def test_after_close_counts_as_done_but_before_open_does_not(now, day_over):
+    env = make_env(once_per_day=True)
+    env.clock.now = now
+    assert env.run().status is RunStatus.SKIPPED
+    assert ("run_done_paper_KR_trade" in env.store.cache) is day_over
+    assert len(env.store.runs) == 1
+
+
+def test_holiday_counts_as_done():
+    env = make_env(once_per_day=True)
+    env.broker.holidays.add(MON)
+    assert "휴장일" in env.run().message
+    env.clock.now += timedelta(hours=1)  # 다른 곳에서 부른 예약 실행
+    assert "이미 실행했습니다" in env.run().message
+    assert len(env.store.runs) == 1  # 휴장일 기록과 알림은 한 번만
+    assert len(env.notifier.messages) == 1
+
+
 def test_without_once_per_day_every_run_counts():
     env = make_env()  # 손으로 실행
     env.run()
