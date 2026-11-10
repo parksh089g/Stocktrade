@@ -50,6 +50,9 @@ create table if not exists public.orders (
   updated_at timestamptz not null default now(),
   primary key (mode, client_order_id)
 );
+-- 주문을 낸 신호의 근거(웹앱에서 왜 샀는지/팔았는지 보여 준다). 이 칸이 생기기 전 주문은 빈 문자열이다.
+-- 이미 만든 표에도 칸이 생기도록 따로 추가한다
+alter table public.orders add column if not exists reason text not null default '';
 create index if not exists orders_by_day on public.orders (mode, market, trade_date);
 create index if not exists orders_open on public.orders (mode, market)
   where status in ('SUBMITTED', 'PARTIALLY_FILLED');

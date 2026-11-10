@@ -1,14 +1,23 @@
 import pytest
 
 from tests.fake_postgrest import FakePostgrest
+from trading.brokers.kis import KisBroker
 from trading.brokers.kis_client import EncryptedTokenCache, FileTokenCache
 from trading.config import Settings
-from trading.engine.factory import SetupError, build_notifier, build_store, build_token_cache
+from trading.core.models import Market
+from trading.engine.factory import (
+    SetupError,
+    build_broker,
+    build_notifier,
+    build_store,
+    build_token_cache,
+)
 from trading.notify.base import ConsoleNotifier, MultiNotifier
 from trading.notify.webpush import WebPushNotifier
 from trading.storage import check
 from trading.storage.memory import MemoryStore
 from trading.storage.supabase import SupabaseStore
+from trading.universe import BENCHMARKS
 
 
 def settings(**kw) -> Settings:
@@ -46,6 +55,26 @@ def test_kis_uses_supabase_and_web_push():
 def test_kis_without_vapid_key_only_prints():
     s = settings(broker="kis", supabase_url="https://x.supabase.co", supabase_service_key="k")
     assert isinstance(build_notifier(s, build_store(s)), ConsoleNotifier)
+
+
+# ---- 비교 지수(BENCHMARKS) ----
+
+EMPTY_UNIVERSE = {Market.KR: [], Market.US: []}
+
+
+@pytest.mark.parametrize("market", list(Market))
+def test_demo_broker_has_benchmark_bars(market):
+    broker = build_broker(settings(), EMPTY_UNIVERSE, market)
+    inst = BENCHMARKS[market]
+    assert not broker.get_daily_bars(market, inst.symbol, 5).empty
+
+
+def test_kis_broker_knows_benchmark_exchange():
+    s = settings(broker="kis", kis_app_key="k", kis_app_secret="s", kis_account_no="12345678-01")
+    broker = build_broker(s, EMPTY_UNIVERSE, Market.US)
+    assert isinstance(broker, KisBroker)
+    # 목록에 없는 SPY도 일봉을 받을 수 있다(거래소를 모르면 BrokerError)
+    assert broker._order_exchange("SPY") == "AMEX"
 
 
 # ---- KIS 토큰 캐시 ----
@@ -93,8 +122,19 @@ def test_storage_check_ok(fake, tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     assert check.main() == 0
     out = capsys.readouterr().out
+    assert "주문 이유 칸(reason) 확인" in out
     assert "Supabase 연결 확인 완료" in out
     assert fake.tables["positions"] == []  # 확인용 행은 지운다
+
+
+def test_storage_check_reports_missing_reason_column(fake, tmp_path, monkeypatch, capsys):
+    # schema.sql을 다시 실행하기 전: 새 엔진이 주문을 기록하지 못하니 미리 알려 준다
+    monkeypatch.chdir(tmp_path)
+    fake.missing_columns["orders"] = {"reason"}
+    assert check.main() == 1
+    out = capsys.readouterr().out
+    assert "reason" in out
+    assert "schema.sql" in out
 
 
 def test_storage_check_reports_failure(fake, tmp_path, monkeypatch, capsys):

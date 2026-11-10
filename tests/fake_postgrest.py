@@ -1,6 +1,7 @@
 """테스트용 가짜 Supabase REST(PostgREST). SupabaseStore가 쓰는 만큼만 흉내 낸다.
 
-- 필터: col=eq.값, col=in.(a,b)
+- 필터: col=eq.값, col=in.(a,b), limit
+- missing_columns에 넣은 칸은 표에 없는 것처럼 400으로 답한다(schema.sql을 다시 실행하기 전)
 - POST: on_conflict + Prefer resolution=merge-duplicates면 upsert, 아니면 insert(runs는 id 부여)
 - Prefer return=representation이면 넣은 행을 돌려준다
 - numeric 컬럼은 진짜처럼 JSON 숫자로 돌려준다
@@ -32,6 +33,8 @@ class FakePostgrest:
         self.requests: list[httpx.Request] = []
         # 앞에서부터 하나씩 꺼내 쓴다: 숫자면 그 상태 코드로 응답, 예외면 던진다
         self.fail_next: list[int | Exception] = []
+        # 표 이름 → 아직 없는 칸 (예: {"orders": {"reason"}})
+        self.missing_columns: dict[str, set[str]] = {}
         self._next_id = 1
 
     @property
@@ -52,19 +55,30 @@ class FakePostgrest:
         rows = self.tables[table]
         params = dict(request.url.params.multi_items())
         select = params.pop("select", None)
+        limit = params.pop("limit", None)
         on_conflict = params.pop("on_conflict", None)
         prefer = request.headers.get("prefer", "")
+        missing = self.missing_columns.get(table, set())
 
         def matches(row: dict[str, Any]) -> bool:
             return all(_match(row.get(col), expr) for col, expr in params.items())
 
         if request.method == "GET":
-            return self._json([_project(r, select) for r in rows if matches(r)])
+            if gone := missing & set((select or "").split(",")):
+                col = sorted(gone)[0]
+                return self._error(400, "42703", f"column {table}.{col} does not exist")
+            found = [_project(r, select) for r in rows if matches(r)]
+            return self._json(found[: int(limit)] if limit else found)
 
         if request.method == "POST":
             body = json.loads(request.content)
+            items = body if isinstance(body, list) else [body]
+            if gone := missing & {k for item in items for k in item}:
+                col = sorted(gone)[0]
+                message = f"Could not find the '{col}' column of '{table}' in the schema cache"
+                return self._error(400, "PGRST204", message)
             written = []
-            for item in body if isinstance(body, list) else [body]:
+            for item in items:
                 if on_conflict and "merge-duplicates" in prefer:
                     keys = on_conflict.split(",")
                     found = next((r for r in rows if all(r[k] == item[k] for k in keys)), None)
@@ -92,6 +106,9 @@ class FakePostgrest:
             return httpx.Response(204)
 
         return httpx.Response(405)
+
+    def _error(self, status: int, code: str, message: str) -> httpx.Response:
+        return httpx.Response(status, json={"code": code, "message": message})
 
     def _json(self, data: Any, status: int = 200) -> httpx.Response:
         def mark(value: Any) -> Any:

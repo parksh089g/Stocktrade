@@ -38,6 +38,9 @@ def main() -> int:
             positions = store.get_positions(market)
             open_orders = store.get_open_orders(market)
             print(f"{market.label}: 보유 {len(positions)}건, 미체결 주문 {len(open_orders)}건")
+        # 나중에 생긴 칸. 엔진이 주문을 기록할 때 쓰므로 없으면 주문 기록이 실패한다
+        store.check_columns("orders", ["reason"])
+        print("주문 이유 칸(reason) 확인")
         print(f"푸시 받을 기기: {len(store.get_push_subscriptions())}대")
 
         store.upsert_position(

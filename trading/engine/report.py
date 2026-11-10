@@ -1,6 +1,7 @@
 """하루 실행 결과. 저장소에 기록하고 알림으로 보낸다."""
 
 from collections.abc import Mapping
+from datetime import date
 from decimal import Decimal
 from enum import StrEnum
 
@@ -8,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from trading.core.clock import format_kst
 from trading.core.models import (
+    Balance,
     Market,
     Order,
     OrderResult,
@@ -34,6 +36,15 @@ class FillUpdate(BaseModel):
     price: Decimal
 
 
+class BenchmarkClose(BaseModel):
+    """계좌 성적을 견줄 지수 ETF의 마지막 확정 종가."""
+
+    symbol: str
+    name: str = ""
+    close: Decimal
+    bar_date: date  # 그 시장 현지 날짜
+
+
 class RunReport(BaseModel):
     market: Market
     mode: str  # paper | live
@@ -52,6 +63,11 @@ class RunReport(BaseModel):
     stop_loss_only: bool = False  # 장 마감 전 손절 확인 실행: 보유 종목의 손절 매도만 봤다
     day_over: bool = False  # 휴장일이나 장 마감 후라 오늘은 더 할 일이 없다
     notify_failed: bool = False  # 알림을 못 보냈으면 실행 자체를 실패로 표시해 GitHub이 알리게 한다
+    # 웹앱의 비중, 평가손익, 수익 곡선용 기록. 알림 본문에는 쓰지 않는다.
+    balance: Balance | None = None  # 주문 전 계좌 잔고(현금, 총평가)
+    # 이번 실행에서 쓴 종목 가격. 매매 실행은 전날 종가, 손절 확인은 지금 가격
+    prices: dict[str, Decimal] = Field(default_factory=dict)
+    benchmark: BenchmarkClose | None = None  # 비교 지수 종가(매매 실행만, 못 받으면 없음)
 
 
 _MODE = {"paper": "모의투자", "live": "실전"}

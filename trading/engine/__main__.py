@@ -20,7 +20,7 @@ from trading.engine.factory import SetupError, build_broker, build_notifier, bui
 from trading.engine.report import RunStatus
 from trading.engine.runner import Engine
 from trading.strategies import STRATEGIES, create_strategy
-from trading.universe import load_universe
+from trading.universe import BENCHMARKS, load_universe
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -79,6 +79,7 @@ def main(argv: list[str] | None = None) -> int:
         dry_run=args.dry_run,
         stop_loss_only=args.stop_loss_only,
         once_per_day=args.once_per_day,
+        benchmarks=BENCHMARKS,
     )
     report = engine.run(market)
     # 오류나 알림 실패는 종료 코드로도 알린다(GitHub Actions 실패 표시)

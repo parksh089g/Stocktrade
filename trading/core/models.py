@@ -119,6 +119,8 @@ class Order(_Frozen):
     limit_price: Price | None = None
     strategy: str
     client_order_id: str
+    # 주문을 낸 신호의 근거(예: "골든크로스: …"). strategy처럼 증권사로는 보내지 않는 기록용 칸이다.
+    reason: str = ""
 
     @model_validator(mode="after")
     def _check_price(self) -> "Order":

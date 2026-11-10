@@ -22,6 +22,7 @@ from trading.core.clock import now_utc, trading_date
 from trading.core.models import (
     Balance,
     Holding,
+    Instrument,
     Market,
     Order,
     OrderResult,
@@ -335,19 +336,28 @@ def make_random_bars(
 
 
 def make_demo_broker(
-    universe: "Universe", *, end: date, seed: int = 0, clock: Callable[[], datetime] = now_utc
+    universe: "Universe",
+    *,
+    end: date,
+    seed: int = 0,
+    extra: Iterable[Instrument] = (),
+    clock: Callable[[], datetime] = now_utc,
 ) -> FakeBroker:
-    """로컬 실행용: 목록의 종목마다 end까지의 가짜 일봉과 현금을 넣은 fake 증권사."""
+    """로컬 실행용: 목록의 종목(과 비교 지수 같은 extra 종목)마다 end까지의 가짜 일봉과
+    현금을 넣은 fake 증권사."""
     broker = FakeBroker(cash={Market.KR: 10_000_000, Market.US: 10_000}, clock=clock)
-    for market, instruments in universe.items():
-        start_price, decimals = (50_000, 0) if market is Market.KR else (150, 2)
+
+    def add(inst: Instrument, bar_seed: int) -> None:
+        start_price, decimals = (50_000, 0) if inst.market is Market.KR else (150, 2)
+        bars = make_random_bars(
+            200, start_price=start_price, end=end.isoformat(), decimals=decimals, seed=bar_seed
+        )
+        broker.set_bars(inst.market, inst.symbol, bars)
+
+    for instruments in universe.values():
         for i, inst in enumerate(instruments):
-            bars = make_random_bars(
-                200,
-                start_price=start_price,
-                end=end.isoformat(),
-                decimals=decimals,
-                seed=seed * 1000 + i,
-            )
-            broker.set_bars(market, inst.symbol, bars)
+            add(inst, seed * 1000 + i)
+    # 목록 종목의 가짜 데이터가 바뀌지 않도록 시드를 떨어뜨려 둔다
+    for j, inst in enumerate(extra):
+        add(inst, seed * 1000 + 900 + j)
     return broker

@@ -9,6 +9,9 @@
 확정된 일봉 뒤에 지금 가격으로 만든 오늘 봉을 붙여 전략에 넘기고, 손절 매도 신호만 쓴다.
 매수와 일반 매도는 확정된 종가로만 판단하므로 내지 않는다. 알릴 일이 없으면 알림을 보내지 않는다.
 
+실행 기록에는 웹앱(비중, 평가손익, 수익 곡선)을 위해 잔고, 이번에 쓴 가격, 비교 지수 종가도 남긴다.
+비교 지수는 참고용이라 받지 못해도 경고 없이 로그만 남긴다(경고가 있으면 알림이 '긴급'이 된다).
+
 하루 한 번(once_per_day)은 예약 실행을 여러 곳(Cloudflare 예약, GitHub 예약)에서 여러 번
 부르기 위한 것이다. 오늘 같은 종류의 실행이 완료(또는 일시정지)로 끝났거나 휴장일, 장 마감 후라
 더 할 일이 없으면 다음 실행은 기록과 알림 없이 끝낸다. 오류로 끝났으면 다시 돈다.
@@ -33,6 +36,7 @@ from trading.core.clock import now_utc, trading_date
 from trading.core.log import redact
 from trading.core.models import (
     Holding,
+    Instrument,
     Market,
     Order,
     OrderStatus,
@@ -42,6 +46,7 @@ from trading.core.models import (
     SkippedSignal,
 )
 from trading.engine.report import (
+    BenchmarkClose,
     RunReport,
     RunStatus,
     format_report,
@@ -62,6 +67,8 @@ logger = logging.getLogger(__name__)
 # 달력 날짜가 아니라 거래일로 세야 긴 연휴(예: 2025년 추석 7일 휴장) 다음 날에도 정상 동작한다.
 MAX_MISSING_TRADING_DAYS = 2
 PAUSED_SKIP = "일시정지 중이라 주문하지 않았습니다(손절 매도만 나갑니다)"
+# 비교 지수는 마지막 확정 종가 하나만 쓴다. 오늘 봉이 섞여 와도 남도록 몇 개 받는다.
+BENCHMARK_BARS = 5
 
 
 class OrderPlacementError(Exception):
@@ -99,6 +106,7 @@ class Engine:
         stop_loss_only: bool = False,
         once_per_day: bool = False,
         index_symbols: Mapping[Market, str] | None = None,
+        benchmarks: Mapping[Market, Instrument] | None = None,
         clock: Callable[[], datetime] = now_utc,
     ) -> None:
         if not strategies:
@@ -118,6 +126,8 @@ class Engine:
         self.once_per_day = once_per_day
         # 시장 지수(ETF) 종목. 주면 그 일봉을 MarketContext로 전략에 함께 넘긴다.
         self.index_symbols = dict(index_symbols or {})
+        # 계좌 성적을 견줄 지수 ETF. 매매 실행마다 종가를 기록만 하고 전략에는 넘기지 않는다.
+        self.benchmarks = dict(benchmarks or {})
         self.clock = clock
 
     def run(self, market: Market) -> RunReport:
@@ -206,6 +216,7 @@ class Engine:
                 return
 
         balance = self.broker.get_balance(market)
+        report.balance = balance
         holdings = self.broker.get_holdings(market)
         positions = self.store.get_positions(market)
         report.warnings += _reconcile(positions, holdings)
@@ -214,7 +225,9 @@ class Engine:
             signals, prices = self._collect_stop_losses(market, today, positions, report)
         else:
             signals, prices = self._collect_signals(market, today, positions, report)
+            report.benchmark = self._benchmark_close(market, today)
         report.signals = signals
+        report.prices = prices
         if pause.paused:
             report.skipped += [
                 SkippedSignal(signal=s, reason=PAUSED_SKIP) for s in signals if not s.stop_loss
@@ -422,6 +435,27 @@ class Engine:
             )
             return MarketContext(index_bars=None)
         return MarketContext(index_bars=bars[bars.index < pd.Timestamp(today)])
+
+    def _benchmark_close(self, market: Market, today: date) -> BenchmarkClose | None:
+        """비교 지수의 마지막 확정 종가. 못 받으면 로그만 남기고 None(웹앱에서는 빈 날)."""
+        inst = self.benchmarks.get(market)
+        if inst is None:
+            return None
+        try:
+            bars = self.broker.get_daily_bars(market, inst.symbol, BENCHMARK_BARS)
+        except Exception:
+            logger.warning("비교 지수(%s) 일봉을 받지 못했습니다", inst.symbol, exc_info=True)
+            return None
+        bars = bars[bars.index < pd.Timestamp(today)]
+        if bars.empty:
+            logger.warning("비교 지수(%s)의 확정된 일봉이 없습니다", inst.symbol)
+            return None
+        return BenchmarkClose(
+            symbol=inst.symbol,
+            name=inst.name,
+            close=Decimal(str(bars["close"].iloc[-1])),
+            bar_date=bars.index[-1].date(),
+        )
 
     def _missing_trading_days(self, market: Market, last_day: date, today: date) -> int:
         """last_day와 today 사이(둘 다 빼고)의 개장일 수."""

@@ -7,7 +7,7 @@
 import json
 import logging
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import date
 from decimal import Decimal
 from typing import Any
@@ -125,6 +125,7 @@ class SupabaseStore(Store):
                 "order_type": o.order_type,
                 "limit_price": _num(o.limit_price),
                 "strategy": o.strategy,
+                "reason": o.reason,
                 "trade_date": trading_date(o.market, result.created_at).isoformat(),
                 "broker_order_id": result.broker_order_id,
                 "status": result.status,
@@ -195,6 +196,18 @@ class SupabaseStore(Store):
             "DELETE", "engine_cache", params={"name": f"eq.{name}"}, prefer="return=minimal"
         )
 
+    # ---- 연결 확인 도구용 ----
+
+    def check_columns(self, table: str, columns: Sequence[str]) -> None:
+        """표에 칸들이 있는지 본다. 없으면(schema.sql을 다시 실행하기 전) StoreError."""
+        try:
+            self._request("GET", table, params={"select": ",".join(columns), "limit": "1"})
+        except StoreError as e:
+            raise StoreError(
+                f"{table} 표에서 {', '.join(columns)} 칸을 읽지 못했습니다. "
+                f"supabase/schema.sql을 다시 실행했는지 확인하세요 ({e})"
+            ) from e
+
     # ---- 내부 ----
 
     def _filter(self, market: Market) -> dict[str, str]:
@@ -252,6 +265,7 @@ def _order_from_row(row: dict[str, Any]) -> OrderResult:
                 "limit_price": row["limit_price"],
                 "strategy": row["strategy"],
                 "client_order_id": row["client_order_id"],
+                "reason": row.get("reason") or "",
             },
             "broker_order_id": row["broker_order_id"],
             "status": row["status"],

@@ -10,6 +10,9 @@
    - Database password는 엔진이 쓰지 않지만 잃어버리지 않게 따로 적어 둔다.
 2. 왼쪽 **SQL Editor** → 새 쿼리를 열고, 이 저장소의 `supabase/schema.sql` 내용을 전부 붙여 넣어 **Run**.
    - "Success. No rows returned"가 나오면 된다. 여러 번 실행해도 괜찮다.
+   - **2026-11-10 변경**: 주문 표(`orders`)에 신호 근거 칸(`reason`)이 생겼다. 이미 실행했어도 한 번 더
+     실행한다. **이 변경이 든 엔진 코드를 main에 올리기 전에 해야 한다.** 칸이 없는 채로 엔진이 돌면 주문은
+     나갔는데 기록 저장이 실패한다. 4번 연결 확인에 `주문 이유 칸(reason) 확인`이 나오면 된다.
 3. 접속 정보를 `.env`에 넣는다.
    - **Project URL** (`https://xxxx.supabase.co`): 프로젝트 화면의 **Connect** 버튼이나 Project Settings > Data API에 있다.
    - **secret 키** (`sb_secret_...`): Project Settings > API Keys에서 만들거나 확인한다.

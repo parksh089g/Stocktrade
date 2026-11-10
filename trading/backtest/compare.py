@@ -24,7 +24,7 @@ from decimal import Decimal
 
 import pandas as pd
 
-from trading.backtest.__main__ import BENCHMARKS, PORTFOLIO_CASH
+from trading.backtest.__main__ import PORTFOLIO_CASH
 from trading.backtest.data import fetch_bars_cached
 from trading.backtest.portfolio import PortfolioResult, cagr, combine, run_portfolio_backtest
 from trading.backtest.simulator import max_drawdown
@@ -36,7 +36,7 @@ from trading.engine.factory import SetupError, build_kis_broker
 from trading.risk.config import RiskConfig
 from trading.strategies import RsiRebound, TrendMA
 from trading.strategies.base import Strategy
-from trading.universe import load_universe
+from trading.universe import BENCHMARKS, load_universe
 
 BOTH = {"trend_ma": 0.5, "rsi_rebound": 0.5}
 

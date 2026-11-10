@@ -33,19 +33,15 @@ from trading.brokers.fake import make_random_bars
 from trading.brokers.kis import KisBroker
 from trading.config import Settings
 from trading.core.log import setup_logging
-from trading.core.models import Instrument, Market
+from trading.core.models import Market
 from trading.engine.factory import SetupError, build_kis_broker
 from trading.strategies import STRATEGIES, create_strategy
-from trading.universe import load_universe
+from trading.universe import BENCHMARKS, load_universe
 
 # 2천만원 계좌에서 한 번 매수하는 금액(전략 50% × 4종목 중 1) 정도로 시작한다
 DEFAULT_CASH = {Market.KR: 2_500_000.0, Market.US: 1_800.0}
 # 계좌 전체 백테스트: 2천만원(미국은 1달러 1,400원대로 잡은 비슷한 금액)
 PORTFOLIO_CASH = {Market.KR: 20_000_000.0, Market.US: 14_000.0}
-BENCHMARKS = {
-    Market.KR: Instrument(market=Market.KR, symbol="069500", name="KODEX 200"),
-    Market.US: Instrument(market=Market.US, symbol="SPY", name="S&P500(SPY)", exchange="AMEX"),
-}
 
 
 def main(argv: list[str] | None = None) -> int:

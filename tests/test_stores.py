@@ -8,8 +8,17 @@ import pytest
 
 from tests.fake_postgrest import FakePostgrest
 from trading.core.clock import KST
-from trading.core.models import Market, Order, OrderResult, OrderStatus, OrderType, Position, Side
-from trading.engine.report import RunReport, RunStatus
+from trading.core.models import (
+    Balance,
+    Market,
+    Order,
+    OrderResult,
+    OrderStatus,
+    OrderType,
+    Position,
+    Side,
+)
+from trading.engine.report import BenchmarkClose, RunReport, RunStatus
 from trading.storage.base import PushSubscription, StoreError
 from trading.storage.memory import MemoryStore
 from trading.storage.supabase import SupabaseStore
@@ -60,7 +69,9 @@ def position(symbol="005930", strategy="a", qty=10, avg="69600.33333333333333333
     )
 
 
-def order_result(status=OrderStatus.SUBMITTED, filled=0, avg=None, cid="20261026-KR-005930-BUY-a"):
+def order_result(
+    status=OrderStatus.SUBMITTED, filled=0, avg=None, cid="20261026-KR-005930-BUY-a", reason=""
+):
     return OrderResult(
         order=Order(
             market=KR,
@@ -71,6 +82,7 @@ def order_result(status=OrderStatus.SUBMITTED, filled=0, avg=None, cid="20261026
             limit_price=D(70_700),
             strategy="a",
             client_order_id=cid,
+            reason=reason,
         ),
         broker_order_id="B-1",
         status=status,
@@ -129,6 +141,42 @@ def test_orders_roundtrip_and_open_orders(store):
     store.save_order(filled)  # 같은 client_order_id는 덮어쓴다
     assert store.get_orders(KR, MON) == [filled]
     assert store.get_open_orders(KR) == []
+
+
+def test_order_reason_roundtrip(store):
+    reason = "골든크로스: 20일선 71,000, 60일선 70,000"
+    store.save_order(order_result(reason=reason))
+    store.save_order(order_result(OrderStatus.FILLED, filled=17, avg=D(70_500), reason=reason))
+    [got] = store.get_orders(KR, MON)
+    assert got.order.reason == reason
+
+
+def test_order_rows_from_before_reason_column_read_as_empty():
+    fake = FakePostgrest()
+    store = supabase(fake)
+    store.save_order(order_result(reason="x"))
+    del fake.tables["orders"][0]["reason"]  # 칸이 생기기 전에 저장된 주문
+    [got] = store.get_orders(KR, MON)
+    assert got.order.reason == ""
+
+
+def test_saving_order_before_schema_update_fails():
+    # schema.sql을 다시 실행하기 전에 새 엔진이 돌면 주문 기록이 실패한다(그래서 순서가 중요하다)
+    fake = FakePostgrest()
+    fake.missing_columns["orders"] = {"reason"}
+    with pytest.raises(StoreError, match="reason"):
+        supabase(fake).save_order(order_result())
+
+
+def test_check_columns():
+    fake = FakePostgrest()
+    store = supabase(fake)
+    store.save_order(order_result())
+    store.check_columns("orders", ["reason"])
+
+    fake.missing_columns["orders"] = {"reason"}
+    with pytest.raises(StoreError, match=r"reason 칸.*schema\.sql"):
+        store.check_columns("orders", ["reason"])
 
 
 def test_order_date_is_market_local_date(store):
@@ -235,3 +283,28 @@ def test_run_record_has_summary_and_report_json():
     assert run_id == str(row["id"])
     assert row["summary"] == "[모의투자] 국내 · 완료"
     assert row["report"]["market"] == "KR"
+
+
+def test_run_report_json_has_account_snapshot_for_web_app():
+    fake = FakePostgrest()
+    report = RunReport(
+        market=KR,
+        mode="paper",
+        started_at=datetime(2026, 10, 26, tzinfo=UTC),
+        balance=Balance(market=KR, cash=D("1500000"), total_equity=D("10400000")),
+        prices={"005930": D("70000.0")},
+        benchmark=BenchmarkClose(
+            symbol="069500", name="KODEX 200", close=D("31000"), bar_date=date(2026, 10, 23)
+        ),
+    )
+    supabase(fake).save_run(report, "요약")
+    saved = fake.tables["runs"][0]["report"]
+    # 웹앱이 읽는 모양: 금액은 문자열(Decimal), 날짜는 YYYY-MM-DD
+    assert saved["balance"] == {"market": "KR", "cash": "1500000", "total_equity": "10400000"}
+    assert saved["prices"] == {"005930": "70000.0"}
+    assert saved["benchmark"] == {
+        "symbol": "069500",
+        "name": "KODEX 200",
+        "close": "31000",
+        "bar_date": "2026-10-23",
+    }

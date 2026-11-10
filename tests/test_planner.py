@@ -75,6 +75,19 @@ def test_buy_sized_to_strategy_slot():
     assert result.skipped == []
 
 
+@pytest.mark.parametrize("side", [Side.BUY, Side.SELL])
+def test_order_carries_signal_reason(side):
+    # 주문 기록에 신호 근거를 남겨 웹앱에서 왜 샀는지/팔았는지 보여 준다
+    s = sig(side=side).model_copy(update={"reason": "골든크로스: 20일선 71,000, 60일선 70,000"})
+    result = plan(
+        [s],
+        positions=[pos()] if side is Side.SELL else [],
+        holdings=[Holding(market=KR, symbol="005930", qty=10, avg_price=D(60_000))],
+    )
+    [planned] = result.orders
+    assert planned.order.reason == s.reason
+
+
 def test_symbol_limit_counts_other_strategy_holdings():
     # 전략 b가 이미 150만원어치 보유 → 종목 한도 200만 중 50만 남음
     result = plan(

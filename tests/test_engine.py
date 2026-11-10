@@ -546,8 +546,61 @@ def test_full_cycle_with_supabase_store():
     assert report.status is RunStatus.OK
     assert fake.tables["positions"] == []
     assert [o["status"] for o in fake.tables["orders"]] == ["FILLED", "FILLED"]
+    # 신호 근거는 체결 동기화로 주문 기록이 바뀌어도 남는다
+    assert [o["reason"] for o in fake.tables["orders"]] == ["a 신호", "a 신호"]
     assert len(fake.tables["runs"]) == 3
     assert env.notification.url == "/runs/3"
+    # 웹앱의 비중/수익 곡선용 기록
+    assert fake.tables["runs"][0]["report"]["balance"]["cash"] == "10000000"
+
+
+# ---- 웹앱용 기록: 잔고, 가격, 비교 지수 ----
+
+BENCH = {KR: Instrument(market=KR, symbol="069500", name="KODEX 200")}
+
+
+def test_run_records_balance_and_prices(env: Env):
+    hold(env, "005930")  # 5주, 평단 80,000(현재가는 마지막 종가 70,000)
+    report = env.run()
+    assert report.balance is not None
+    assert (report.balance.cash, report.balance.total_equity) == (D(10_000_000), D(10_350_000))
+    # 전략이 본 종목의 마지막 확정 종가
+    assert report.prices == {"005930": D(70_000), "000660": D(200_000)}
+    assert report.benchmark is None  # 비교 지수를 정하지 않았다
+
+
+def test_run_records_benchmark_close_without_todays_bar():
+    env = make_env(benchmarks=BENCH)
+    env.broker.set_bars(KR, "069500", bars_from_closes([30_000, 31_000, 32_000], end=MON))
+    report = env.run()
+    b = report.benchmark
+    assert (b.symbol, b.name, b.close, b.bar_date) == ("069500", "KODEX 200", D(31_000), FRI)
+
+
+@pytest.mark.parametrize("bars", [None, "only today"])
+def test_benchmark_problems_are_only_logged(bars):
+    env = make_env(benchmarks=BENCH)
+    if bars:
+        env.broker.set_bars(KR, "069500", bars_from_closes([30_000], end=MON))
+    env.a.signals = {"005930": Side.BUY}
+    report = env.run()
+    assert report.status is RunStatus.OK
+    assert report.benchmark is None
+    # 경고로 올리면 알림이 '긴급'이 되고 손절 확인 알림도 매번 간다
+    assert report.warnings == []
+    assert not env.notification.urgent
+    assert len(report.orders) == 1
+
+
+def test_stop_loss_check_records_current_prices_but_no_benchmark():
+    env = stop_check_env(benchmarks=BENCH)
+    env.broker.set_bars(KR, "069500", bars_from_closes([30_000] * 3, end=MON))
+    hold(env, "005930")
+    env.broker.set_price(KR, "005930", 75_000)
+    report = env.run()
+    assert report.prices == {"005930": D(75_000)}  # 지금 가격
+    assert report.benchmark is None  # 하루 한 점은 매매 실행에서만 남긴다
+    assert report.balance is not None
 
 
 # ---- 시장 지수 일봉 넘기기 ----

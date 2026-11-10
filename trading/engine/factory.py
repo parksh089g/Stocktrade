@@ -16,7 +16,7 @@ from trading.notify.webpush import WebPushNotifier
 from trading.storage.base import Store
 from trading.storage.memory import MemoryStore
 from trading.storage.supabase import SupabaseStore
-from trading.universe import Universe
+from trading.universe import BENCHMARKS, Universe
 
 TOKEN_DIR = Path(".cache")
 
@@ -28,11 +28,16 @@ class SetupError(Exception):
 def build_broker(
     settings: Settings, universe: Universe, market: Market, *, seed: int = 0
 ) -> BrokerAdapter:
+    """엔진용 증권사. 비교 지수(BENCHMARKS) 일봉도 받을 수 있게 해 둔다."""
     if settings.broker == "fake":
         # 가짜 일봉은 어제까지 만든다(오늘 봉은 장 시작 전이라 없음)
         today = pd.Timestamp(trading_date(market, now_utc()))
-        return make_demo_broker(universe, end=(today - pd.offsets.BDay(1)).date(), seed=seed)
-    return build_kis_broker(settings, universe)
+        end = (today - pd.offsets.BDay(1)).date()
+        return make_demo_broker(universe, end=end, seed=seed, extra=BENCHMARKS.values())
+    broker = build_kis_broker(settings, universe)
+    for inst in BENCHMARKS.values():
+        broker.add_instrument(inst)  # 목록에 없는 SPY의 거래소(AMEX)를 알려 준다
+    return broker
 
 
 def build_kis_broker(settings: Settings, universe: Universe) -> KisBroker:

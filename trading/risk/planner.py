@@ -171,4 +171,5 @@ def _order(sig: Signal, qty: int, limit: Decimal, trade_date: date) -> Order:
         limit_price=limit,
         strategy=sig.strategy,
         client_order_id=f"{trade_date:%Y%m%d}-{sig.market}-{sig.symbol}-{sig.side}-{sig.strategy}",
+        reason=sig.reason,
     )
