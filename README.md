@@ -57,9 +57,24 @@ uv run python -m trading.engine --market KR --ignore-hours --dry-run --stop-loss
 ## 기록과 알림
 
 - 기록: Supabase(`supabase/schema.sql`). 모의투자/실전 기록은 따로 저장된다. 연결 확인 `uv run python -m trading.storage.check`
-- 알림: 웹앱 푸시. 키 만들기 `uv run python -m trading.notify.vapid`. 알림을 한 기기에도 못 보내면 실행이 실패로 끝나
-  GitHub Actions 실패 메일이 백업 알림이 된다.
+- 알림: 웹앱 푸시. 키 만들기 `uv run python -m trading.notify.vapid`, 폰으로 시험 알림 `uv run python -m trading.notify.check`.
+  알림을 한 기기에도 못 보내면 실행이 실패로 끝나 GitHub Actions 실패 메일이 백업 알림이 된다.
 - fake 증권사로 실행할 때는 가짜 주문이 실제 기록에 섞이지 않도록 메모리 저장소와 화면 출력만 쓴다.
+
+## 웹앱(폰)
+
+`webapp/`: Vite + TypeScript(Preact) PWA. 기록 보기(홈, 보유, 주문, 알림함, 성적), 일시정지 스위치, 푸시 알림.
+Supabase Auth로 로그인하고 publishable 키로 읽는다(RLS: 소유자만 읽기, 바꾸는 것은 스위치와 자기 푸시 구독뿐).
+준비와 배포는 [docs/SETUP.md](docs/SETUP.md) 6장.
+
+```bash
+cd webapp
+npm ci
+npm run demo     # 키 없이 데모 데이터로 화면 보기
+npm run dev      # 실제 기록(webapp/.env.local 필요)
+npm test         # 계산 시험, npm run typecheck로 타입 검사
+npm run deploy   # Cloudflare Pages에 올리기
+```
 
 ## 증권사(KIS) 연결
 

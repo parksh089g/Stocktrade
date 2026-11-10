@@ -8,7 +8,7 @@
 *.token.json
 
 # 증권사에서 받은 시세(백테스트용)
-data/
+/data/
 
 # Python
 __pycache__/

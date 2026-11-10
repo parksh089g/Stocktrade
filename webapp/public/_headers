@@ -1,0 +1,15 @@
+# Cloudflare Pages 응답 헤더. 스크립트는 이 사이트 것만, 접속은 이 사이트와 Supabase로만 허용한다.
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: same-origin
+  X-Frame-Options: DENY
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://*.supabase.co wss://*.supabase.co; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
+
+# 빌드 파일은 이름에 내용 해시가 있어 오래 캐시해도 된다
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# 서비스 워커는 늘 새 것을 확인한다
+/sw.js
+  Cache-Control: no-cache

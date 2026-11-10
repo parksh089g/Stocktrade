@@ -17,7 +17,7 @@
    - **Project URL** (`https://xxxx.supabase.co`): 프로젝트 화면의 **Connect** 버튼이나 Project Settings > Data API에 있다.
    - **secret 키** (`sb_secret_...`): Project Settings > API Keys에서 만들거나 확인한다.
      이 키는 모든 데이터를 읽고 쓰는 관리자 키다. `.env`와 GitHub Secrets 말고는 어디에도 두지 않는다.
-     (publishable 키 `sb_publishable_...`는 M7 웹앱에서 쓰는 다른 키다)
+     (publishable 키 `sb_publishable_...`는 6장 웹앱에서 쓰는 다른 키다)
 
    ```
    SUPABASE_URL=https://xxxx.supabase.co
@@ -42,16 +42,16 @@
    uv run python -m trading.notify.vapid
    ```
 
-   화면에 나오는 `VAPID_PUBLIC_KEY=...`는 M7 웹앱에서 쓴다(알려져도 괜찮은 값). 다시 실행하면 언제든 다시 볼 수 있다.
+   화면에 나오는 `VAPID_PUBLIC_KEY=...`는 6장 웹앱에서 쓴다(알려져도 괜찮은 값). 다시 실행하면 언제든 다시 볼 수 있다.
 2. `.env`에 연락처를 넣는다. 푸시 서비스(구글)가 문제가 있을 때 연락하는 주소다.
 
    ```
    VAPID_SUBJECT=mailto:본인메일주소
    ```
-3. 실제로 폰에 알림이 오는지는 M7에서 웹앱을 폰에 설치하고 알림을 켠 뒤에 확인한다.
+3. 실제로 폰에 알림이 오는지는 6장에서 웹앱을 폰에 설치하고 알림을 켠 뒤에 확인한다.
    그 전에는 실행 결과가 Supabase `runs` 표와 GitHub Actions 로그에 남는다.
    - VAPID 개인키가 있는데 알림을 받을 기기가 없으면 실행이 실패로 끝난다(알림을 못 보낸 것도 실패로 친다).
-     그래서 GitHub Secrets의 `VAPID_PRIVATE_KEY`는 M7에서 폰 알림을 켠 뒤에 넣는다.
+     그래서 GitHub Secrets의 `VAPID_PRIVATE_KEY`는 6-5에서 폰 알림을 확인한 뒤에 넣는다.
 
 ## 3. KIS 모의투자 키 (증권사 연결)
 
@@ -128,7 +128,7 @@ GitHub 예약 실행은 몇 분에서 몇 시간 늦게 시작할 수 있고, �
 | `KIS_PAPER_ACCOUNT_NO` | `.env`의 `KIS_ACCOUNT_NO` | 지금 |
 | `SUPABASE_URL` | `.env`의 `SUPABASE_URL` | 지금 |
 | `SUPABASE_SERVICE_KEY` | `.env`의 `SUPABASE_SERVICE_KEY` | 지금 |
-| `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | `.env`의 같은 이름 값 | M7에서 폰 알림을 켠 뒤 |
+| `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | `.env`의 같은 이름 값 | 6-5에서 폰 알림을 확인한 뒤 |
 | `KIS_LIVE_APP_KEY`, `KIS_LIVE_APP_SECRET`, `KIS_LIVE_ACCOUNT_NO` | 실전 키와 실전 계좌번호 | 실전 전환 때 |
 
 - 실전 키는 이 PC의 파일에 저장하지 않는다. KIS 사이트에서 복사해 GitHub 화면에 바로 붙여 넣는다.
@@ -166,12 +166,12 @@ GitHub 예약 실행은 몇 분에서 몇 시간 늦게 시작할 수 있고, �
 
 ### 4-5. 멈추기
 
-- 주문만 멈추기: 일시정지 스위치(M7 웹앱. 그 전에는 Supabase **Table Editor**의 `trading_switch`에서
-  `paused`를 `true`로). 손절 매도는 계속 나간다.
+- 주문만 멈추기: 웹앱 **설정 → 일시정지 켜기**(6장). 웹앱을 못 쓸 때는 Supabase **Table Editor**의
+  `trading_switch`에서 `paused`를 `true`로. 손절 매도는 계속 나간다.
 - 실행 자체를 멈추기: 변수 `SCHEDULE_ENABLED`를 지우거나 `false`로 바꾼다. Cloudflare 예약이 불러도
   돌지 않는다.
 
-### 4-6. 실전 전환 (M7 뒤에)
+### 4-6. 실전 전환 (6장까지 끝낸 뒤에)
 
 1. 4-1 표의 실전 키 3개를 넣는다.
 2. 변수 `TRADING_MODE`를 `live`로 넣는다. 처음에는 `MAX_DAILY_BUY_KRW`/`MAX_DAILY_BUY_USD`를 작게 둔다.
@@ -236,3 +236,93 @@ Worker는 인터넷 주소 없이 예약으로만 돈다. 실행 시각들의 '�
 - 예약 실행 전체를 멈추려면 4-5처럼 `SCHEDULE_ENABLED`를 끈다. Cloudflare가 요청해도 실행이 돌지 않는다.
 - Cloudflare 예약만 멈추려면 Worker 화면 **Settings > Trigger Events**에서 Cron을 지우거나 Worker를
   지운다. GitHub 예약은 그대로 돈다.
+
+## 6. 웹앱 (폰 앱)
+
+엔진 기록을 폰에서 보고, 일시정지를 켜고 끄고, 실행 알림을 받는 앱이다(`webapp/`). Cloudflare Pages에
+올려 무료로 쓴다. 1~5장을 먼저 끝낸다.
+
+### 6-1. 로그인 계정 만들기 (Supabase)
+
+1. **Authentication > Users > Add user > Create new user**: 앱에 로그인할 이메일과 비밀번호를 넣고
+   **Auto Confirm User**를 켠다.
+2. **SQL Editor**에서 그 계정을 소유자로 등록한다(이메일만 바꾼다).
+
+   ```sql
+   insert into public.owners (user_id)
+   select id from auth.users where email = '내이메일@example.com'
+   on conflict do nothing;
+   ```
+3. **Authentication > Sign In / Providers > Email**에서 **Allow new users to sign up**을 끈다.
+   웹앱에는 가입 화면이 없고, 소유자가 아닌 계정은 로그인해도 아무것도 볼 수 없다(RLS).
+
+### 6-2. 웹앱 설정 (`webapp/.env.local`)
+
+`webapp/.env.example`을 `webapp/.env.local`로 복사하고 값을 넣는다. 셋 다 화면에 실리는 공개용 값이다.
+
+| 이름 | 값 |
+|---|---|
+| `VITE_SUPABASE_URL` | 1장의 Project URL (`https://xxxx.supabase.co`) |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | Project Settings > API Keys의 publishable 키 (`sb_publishable_...`) |
+| `VITE_VAPID_PUBLIC_KEY` | `uv run python -m trading.notify.vapid`가 보여 주는 공개키(2장) |
+
+secret 키(`sb_secret_...`)를 잘못 넣으면 웹앱이 실행을 거부한다. 웹 푸시 개인키는 저장소 루트 `.env`에만 둔다.
+
+`VITE_VAPID_PUBLIC_KEY`는 GitHub Secrets에 넣을 `VAPID_PRIVATE_KEY`와 **짝이어야 한다**. 개인키가 든 `.env`가
+있는 PC(6-5의 시험 알림과 GitHub Secrets를 넣을 PC)에서 `uv run python -m trading.notify.vapid`를 실행해 나온
+공개키를 넣는다. 짝이 안 맞으면 푸시 서비스가 알림을 거부한다(403). 키를 바꾸면 폰에서 알림을 껐다 다시 켠다.
+
+### 6-3. 이 PC에서 확인
+
+```bash
+cd webapp
+npm ci
+npm run dev    # http://localhost:5173 을 윈도 크롬에서 연다(실제 기록, 6-1 계정으로 로그인)
+npm run demo   # 키 없이 데모 데이터로 화면만 본다
+npm test       # 계산(비중, 성적, 시간 표기) 시험
+```
+
+### 6-4. Cloudflare Pages에 올리기
+
+1. 처음 한 번: 5장과 같은 Cloudflare 계정으로 로그인하고 프로젝트를 만든다.
+
+   ```bash
+   cd webapp
+   npx wrangler@4.153.0 login
+   npx wrangler@4.153.0 pages project create stocktrade --production-branch main
+   ```
+2. 올린다. 빌드한 뒤 올리며, `.env.local` 값은 빌드할 때 들어가므로 Cloudflare 화면에 넣을 것은 없다.
+
+   ```bash
+   npm run deploy
+   ```
+3. 주소는 `https://stocktrade.pages.dev`다(같은 이름이 이미 있으면 올릴 때 나오는 주소를 쓴다).
+   웹앱을 고치면 다시 `npm run deploy`.
+
+### 6-5. 폰에 설치하고 알림 켜기 (안드로이드 크롬)
+
+1. 폰 크롬에서 주소를 열고 메뉴(⋮) > **앱 설치**(또는 **홈 화면에 추가**).
+2. 설치한 앱을 열고 6-1의 이메일과 비밀번호로 로그인한다.
+3. 오른쪽 위 톱니(설정) > **이 기기 알림** > **알림 켜기** > 허용.
+4. 이 PC에서 시험 알림을 보낸다. 루트 `.env`에 `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`,
+   `VAPID_SUBJECT=mailto:본인메일주소`가 있어야 한다.
+
+   ```bash
+   uv run python -m trading.notify.check
+   ```
+
+   폰에 "[시험] 푸시 알림 확인"이 오고, 누르면 앱이 열리면 된다. 안 오면 폰 **설정 > 애플리케이션 >
+   (설치한 앱 또는 Chrome) > 알림**이 허용인지, 배터리 절전 예외인지 본다. 앱 설정에서 알림을 껐다 켜도 된다.
+5. GitHub Secrets에 `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`를 넣는다(4-1 표, 값은 루트 `.env`).
+   다음 실행부터 엔진이 폰으로 알림을 보낸다. 알림을 한 기기에도 못 보내면 실행이 실패로 끝나
+   GitHub 메일이 온다.
+
+### 6-6. 화면
+
+- **홈**: 오늘 일어난 일(실행마다 체결·주문·주문 안 함·확인 필요), 시장별 총평가와 평가손익, 전략 비중
+  (추세/반등/현금, 목표 50/50). 숫자 옆 기준 시각은 마지막 실행 시각이다. 웹앱은 시세를 따로 받지 않는다.
+- **보유**: 종목별 평가손익과 산 이유. **주문**: 날짜별 주문, 상태, 체결, 근거, 증권사 메시지.
+- **알림함**: 실행 기록. 알림을 누르면 그 실행이 열리고, 주문 근거와 주문하지 않은 이유가 나온다.
+- **성적**: 계좌와 지수(KODEX 200, SPY)를 같은 날 100으로 맞춘 수익 곡선, 전략별 성적표.
+  잔고와 지수 기록은 2026-11-10부터 쌓인다.
+- **설정**: 일시정지(주문만 멈춤, 손절 매도는 계속), 이 기기 알림, 모의투자/실전 기록 보기.
