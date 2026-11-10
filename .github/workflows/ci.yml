@@ -23,3 +23,12 @@ jobs:
       - run: uv run --no-sync pytest
       # 예약 실행을 부르는 Cloudflare Worker(scheduler/). 러너에 들어 있는 Node로 돌린다.
       - run: node --test scheduler/worker.test.js
+      # 폰 웹앱(webapp/): 타입 검사, 테스트, 빌드. 역시 러너에 들어 있는 Node로 돌린다.
+      - run: npm ci --no-audit --no-fund
+        working-directory: webapp
+      - run: npm run typecheck
+        working-directory: webapp
+      - run: npm test
+        working-directory: webapp
+      - run: npx vite build
+        working-directory: webapp
