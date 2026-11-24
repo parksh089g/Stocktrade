@@ -75,6 +75,26 @@ create table if not exists public.runs (
 );
 create index if not exists runs_recent on public.runs (started_at desc);
 
+-- 매수 후보 악재 판정(LLM, 섀도 모드) 기록. 실행 기록(runs.report)의 screens를 한 줄씩 펼친 보기다.
+-- 판정은 주문에 반영하지 않으므로, 몇 주 뒤 '거부했을 것' 종목과 나머지의 이후 수익을 비교해 효과를 본다.
+-- security_invoker: 보는 사람의 권한(runs 표의 RLS)을 그대로 따른다
+create or replace view public.llm_screens with (security_invoker = true) as
+select
+  r.id as run_id,
+  r.mode,
+  r.started_at,
+  s ->> 'market' as market,
+  s ->> 'symbol' as symbol,
+  s ->> 'strategy' as strategy,
+  s ->> 'verdict' as verdict,
+  s ->> 'reason' as reason,
+  s ->> 'mode' as screen_mode,
+  s ->> 'model' as model,
+  (s ->> 'since')::date as since,
+  jsonb_array_length(coalesce(s -> 'disclosures', '[]'::jsonb)) as disclosure_count
+from public.runs r
+cross join lateral jsonb_array_elements(coalesce(r.report -> 'screens', '[]'::jsonb)) s;
+
 -- 웹 푸시 구독(기기별). 웹앱이 넣고, 엔진이 읽어서 보낸다. 만료되면 엔진이 지운다
 create table if not exists public.push_subscriptions (
   endpoint text primary key,

@@ -326,3 +326,45 @@ npm test       # 계산(비중, 성적, 시간 표기) 시험
 - **성적**: 계좌와 지수(KODEX 200, SPY)를 같은 날 100으로 맞춘 수익 곡선, 전략별 성적표.
   잔고와 지수 기록은 2026-11-10부터 쌓인다.
 - **설정**: 일시정지(주문만 멈춤, 손절 매도는 계속), 이 기기 알림, 모의투자/실전 기록 보기.
+
+## 7. LLM 보조 기능 (선택)
+
+실행 요약과 매수 후보 악재 판정(섀도 모드)을 켠다. 둘 다 주문과 리스크 규칙에는 손대지 않고, 실패하면
+LLM이 없는 것처럼 지나간다. 변수가 없으면 지금처럼 돈다.
+
+### 7-1. 비밀값과 변수 넣기
+
+4-1, 4-2와 같은 화면에서 넣는다.
+
+| 종류 | 이름 | 값 |
+|---|---|---|
+| Secret | `LLM_API_KEY` | LLM 회사의 API 키 |
+| Variable | `LLM_PROVIDER` | LLM 회사 이름(지원하는 값은 `.env.example` 참고). 어댑터가 없는 값을 넣으면 실행이 설정 오류로 멈추니 지원하는 값만 넣는다 |
+| Variable | `LLM_MODEL` | 모델 이름. 하루 몇 번 짧게 부르므로 작고 싼 모델로 충분하다 |
+| Variable | `LLM_SCREEN` | `shadow`(악재 판정 기록) 또는 넣지 않음(끔) |
+| Secret | `DART_API_KEY` | (악재 판정, 국내) [OpenDART](https://opendart.fss.or.kr) 가입 후 인증키 신청(무료) |
+| Variable | `SEC_USER_AGENT` | (악재 판정, 미국) `stocktrade 본인메일주소`. SEC가 요청마다 연락처를 요구한다 |
+
+- 요약만 쓰려면 `LLM_API_KEY`, `LLM_PROVIDER`, `LLM_MODEL`만 넣는다.
+- 공시 출처가 없는 시장의 매수 신호는 '판정 못 함'으로 기록된다.
+- 로컬에서 쓸 때는 `.env`에 같은 이름으로 넣는다.
+
+### 7-2. 확인
+
+1. Supabase SQL Editor에서 `supabase/schema.sql`을 한 번 더 실행한다(보기 `llm_screens`가 생긴다).
+2. 4-3처럼 손으로 시험 실행(dry_run)을 돌리고 **설정 표시** 단계에 LLM 설정이 보이는지 본다.
+   매수 신호가 있던 날이면 알림 맨 앞에 `요약(AI):` 줄과 `악재 판정(기록만, …)` 줄이 붙는다.
+
+### 7-3. 섀도 모드 결과 보기
+
+```sql
+select started_at, market, symbol, strategy, verdict, reason
+from llm_screens where mode = 'paper' order by started_at desc;
+```
+
+4~8주 모은 뒤 `VETO`(거부했을 것) 종목과 나머지의 이후 수익(주문 기록과 실행 기록의 가격)을 비교한다.
+거부했을 종목이 뚜렷하게 나빴을 때만 판정을 주문에 반영하는 단계를 따로 만든다. 그 전까지는 기록만 한다.
+
+### 7-4. 끄기
+
+`LLM_SCREEN`을 지우면 판정을, `LLM_PROVIDER`를 지우면 LLM 기능 전체를 끈다.

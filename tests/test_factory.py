@@ -8,10 +8,13 @@ from trading.core.models import Market
 from trading.engine.factory import (
     SetupError,
     build_broker,
+    build_llm,
     build_notifier,
+    build_screener,
     build_store,
     build_token_cache,
 )
+from trading.llm.base import FakeLLM
 from trading.notify.base import ConsoleNotifier, MultiNotifier
 from trading.notify.webpush import WebPushNotifier
 from trading.storage import check
@@ -147,3 +150,34 @@ def test_storage_check_reports_failure(fake, tmp_path, monkeypatch, capsys):
 def test_storage_check_needs_settings(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     assert check.main() == 2
+
+
+# ---- LLM 보조 기능 ----
+
+
+def test_llm_is_off_by_default():
+    s = settings()
+    assert build_llm(s) is None
+    assert build_screener(s, None) is None
+
+
+def test_screen_needs_llm():
+    with pytest.raises(SetupError, match="LLM_PROVIDER"):
+        build_screener(settings(llm_screen="shadow"), None)
+
+
+def test_screen_sources_follow_settings():
+    llm = FakeLLM()
+    only_kr = build_screener(settings(llm_screen="shadow", dart_api_key="dart-key-1"), llm)
+    assert only_kr is not None
+    assert set(only_kr.sources) == {Market.KR}
+    both = build_screener(
+        settings(llm_screen="shadow", dart_api_key="k" * 8, sec_user_agent="me a@b.c"), llm
+    )
+    assert both is not None
+    assert set(both.sources) == {Market.KR, Market.US}
+
+
+def test_llm_and_dart_keys_are_redacted():
+    s = settings(llm_api_key="llm-secret-1", dart_api_key="dart-secret-1")
+    assert {"llm-secret-1", "dart-secret-1"} <= set(s.secret_values())

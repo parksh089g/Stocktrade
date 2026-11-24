@@ -10,7 +10,12 @@ from trading.brokers.kis import KisBroker
 from trading.brokers.kis_client import EncryptedTokenCache, FileTokenCache, KisClient, TokenCache
 from trading.config import Settings
 from trading.core.clock import now_utc, trading_date
+from trading.core.log import redact
 from trading.core.models import Market
+from trading.llm.base import LLMClient
+from trading.llm.dart import DartSource
+from trading.llm.edgar import EdgarSource
+from trading.llm.screen import BuyScreener, DisclosureSource
 from trading.notify.base import ConsoleNotifier, MultiNotifier, Notifier
 from trading.notify.webpush import WebPushNotifier
 from trading.storage.base import Store
@@ -107,3 +112,28 @@ def build_notifier(settings: Settings, store: Store) -> Notifier:
         store, settings.vapid_private_key.get_secret_value(), settings.vapid_subject
     )
     return MultiNotifier([console, push])
+
+
+def build_llm(settings: Settings) -> LLMClient | None:
+    """LLM 보조 기능용 클라이언트. LLM_PROVIDER가 none이면 None(LLM 기능을 쓰지 않는다)."""
+    if settings.llm_provider == "none":
+        return None
+    raise SetupError(f"LLM_PROVIDER={settings.llm_provider} 어댑터가 아직 없습니다")
+
+
+def build_screener(settings: Settings, llm: LLMClient | None) -> BuyScreener | None:
+    """매수 후보 악재 판정(섀도 모드). LLM과 시장별 공시 출처가 있어야 한다.
+
+    출처가 없는 시장의 매수 신호는 '판정 못 함'으로 기록된다.
+    """
+    if settings.llm_screen == "off":
+        return None
+    if llm is None:
+        raise SetupError("LLM_SCREEN을 쓰려면 LLM_PROVIDER 설정이 필요합니다")
+    sources: dict[Market, DisclosureSource] = {}
+    if settings.dart_api_key:
+        sources[Market.KR] = DartSource(settings.dart_api_key.get_secret_value())
+    if settings.sec_user_agent:
+        sources[Market.US] = EdgarSource(settings.sec_user_agent)
+    secrets = settings.secret_values()
+    return BuyScreener(llm, sources, clean=lambda text: redact(text, secrets))
