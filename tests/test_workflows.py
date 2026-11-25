@@ -232,6 +232,32 @@ def test_webapp_deploy_builds_only_with_public_values():
     # 웹앱 빌드에 들어가는 값은 공개용 Variables뿐이고, Secret은 Cloudflare 토큰 하나다
     for line in re.findall(r"VITE_\w+: \$\{\{ (.+?) \}\}", text):
         assert line.startswith("vars."), line
-    assert re.findall(r"secrets\.\w+", text) == ["secrets.CLOUDFLARE_API_TOKEN"]
+    assert sorted(set(re.findall(r"secrets\.\w+", text))) == [
+        "secrets.CLOUDFLARE_API_TOKEN",
+        "secrets.SUPABASE_URL",
+        "secrets.VAPID_PRIVATE_KEY",
+    ]
     assert "sb_publishable_*" in text
-    assert 'echo "$CLOUDFLARE_API_TOKEN' not in text
+    for name in ("CLOUDFLARE_API_TOKEN", "ENGINE_VAPID_PRIVATE_KEY"):
+        assert f'echo "${name}' not in text
+        assert f"{name}=" not in text  # GITHUB_ENV로 넘기지 않는다
+    # 개인키는 공개키를 계산하는 데만 쓰고 웹앱 빌드 값으로 넘기지 않는다
+    assert "VITE_VAPID_PUBLIC_KEY=$public" in text
+
+
+def test_webapp_deploy_derives_matching_vapid_public_key():
+    """워크플로의 node 계산이 엔진(trading.notify.vapid)과 같은 공개키를 내는지."""
+    import os
+    import shutil
+    import subprocess
+
+    from trading.notify.vapid import generate_private_key, public_key_from_private
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node 없음")
+    script = re.search(r"node -e '(.+?)'\)", read("webapp-deploy.yml")).group(1)
+    private = generate_private_key()
+    env = {**os.environ, "ENGINE_VAPID_PRIVATE_KEY": private}
+    out = subprocess.run([node, "-e", script], env=env, capture_output=True, text=True, check=True)
+    assert out.stdout.strip() == public_key_from_private(private)

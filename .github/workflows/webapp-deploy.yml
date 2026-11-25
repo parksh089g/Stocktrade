@@ -2,7 +2,8 @@
 #
 # main에 웹앱이 바뀌어 올라왔을 때(PR 머지)와 손으로 실행할 때만 돈다. PR(포크 포함)에서는 돌지 않는다.
 # 웹앱에 들어가는 값(VITE_*)은 화면에 실리는 공개용 값이라 Variables에 둔다.
-# Cloudflare 토큰만 Secret이며 로그에 찍지 않는다.
+# Variables가 비어 있으면 엔진용 Secret에서 공개 부분만 채운다: 주소는 SUPABASE_URL,
+# 웹 푸시 공개키는 VAPID_PRIVATE_KEY에서 계산한 공개키. 개인키 자체는 빌드에 넣지 않고 로그에 찍지 않는다.
 name: webapp-deploy
 
 on:
@@ -37,6 +38,22 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: 빈 값은 엔진 Secret에서 공개 부분만 채우기
+        env:
+          ENGINE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          ENGINE_VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+        run: |
+          if [ -z "$VITE_SUPABASE_URL" ] && [ -n "$ENGINE_SUPABASE_URL" ]; then
+            echo "VITE_SUPABASE_URL=$ENGINE_SUPABASE_URL" >> "$GITHUB_ENV"
+            echo "Supabase 주소는 Secret SUPABASE_URL과 같은 값을 씁니다."
+          fi
+          if [ -z "$VITE_VAPID_PUBLIC_KEY" ] && [ -n "$ENGINE_VAPID_PRIVATE_KEY" ]; then
+            # 개인키(base64url 32바이트)에서 P-256 공개키(압축 안 한 65바이트, base64url)를 계산한다
+            public=$(node -e 'const c=require("node:crypto");const e=c.createECDH("prime256v1");e.setPrivateKey(Buffer.from(process.env.ENGINE_VAPID_PRIVATE_KEY,"base64url"));console.log(e.getPublicKey().toString("base64url"))')
+            echo "VITE_VAPID_PUBLIC_KEY=$public" >> "$GITHUB_ENV"
+            echo "웹 푸시 공개키는 Secret VAPID_PRIVATE_KEY에서 계산했습니다: $public"
+          fi
 
       - name: 설정 확인
         id: check

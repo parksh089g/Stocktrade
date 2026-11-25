@@ -328,14 +328,16 @@ PR(포크 포함)에서는 돌지 않는다.
    만든 토큰은 한 번만 보이니 바로 2번에 넣는다. 채팅이나 파일에 붙여 넣지 않는다.
 2. GitHub 저장소 **Settings > Secrets and variables > Actions**:
    - **Secrets** 탭에 `CLOUDFLARE_API_TOKEN` = 1번 토큰
-   - **Variables** 탭에 아래 넷. 모두 화면에 실리는 공개용 값이라 Variables에 둬도 된다.
+   - **Variables** 탭에 아래 둘. 둘 다 화면에 실리는 공개용 값이라 Variables에 둬도 된다.
 
    | 이름 | 값 |
    |---|---|
    | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare 화면 **Workers & Pages** 오른쪽의 Account ID |
-   | `VITE_SUPABASE_URL` | 6-2 표와 같다 |
-   | `VITE_SUPABASE_PUBLISHABLE_KEY` | 6-2 표와 같다(`sb_publishable_...`, secret 키를 넣으면 워크플로가 멈춘다) |
-   | `VITE_VAPID_PUBLIC_KEY` | 6-2 표와 같다(GitHub Secrets의 `VAPID_PRIVATE_KEY`와 짝) |
+   | `VITE_SUPABASE_PUBLISHABLE_KEY` | Supabase **Project Settings > API Keys**의 publishable 키(`sb_publishable_...`). secret 키를 넣으면 워크플로가 멈춘다 |
+
+   Supabase 주소와 웹 푸시 공개키는 넣지 않아도 된다. 워크플로가 4장에서 넣은 Secret `SUPABASE_URL`을 쓰고,
+   Secret `VAPID_PRIVATE_KEY`에서 짝이 맞는 공개키를 계산한다(개인키는 빌드에 들어가지 않는다).
+   다른 값을 쓰고 싶을 때만 Variables에 `VITE_SUPABASE_URL`, `VITE_VAPID_PUBLIC_KEY`를 넣는다.
 3. **Actions > webapp-deploy > Run workflow**로 한 번 돌린다. 값이 빠져 있으면 경고만 남기고 올리지 않는다.
    끝나면 로그 마지막 줄에 주소가 나온다.
 
