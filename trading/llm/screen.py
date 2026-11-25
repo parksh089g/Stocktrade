@@ -9,6 +9,7 @@
 """
 
 import logging
+import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Mapping, Sequence
 from datetime import date, timedelta
@@ -22,6 +23,8 @@ logger = logging.getLogger(__name__)
 LOOKBACK_DAYS = 14  # 신호일 기준 이만큼(달력 날짜) 전부터의 공시를 본다
 MAX_DISCLOSURES = 20  # LLM에 넘길 최근 공시 수
 MAX_SYMBOLS = 10  # 한 번 실행에서 판정할 종목 수(비용과 시간 상한)
+# 판정에 쓸 시간 상한(초). 판정이 주문 앞에 있으므로 주문이 늦어지지 않게 한다.
+BUDGET_SECONDS = 120
 MAX_REASON_CHARS = 120
 NO_DISCLOSURES = "최근 공시가 없습니다"
 
@@ -62,12 +65,16 @@ class BuyScreener:
         *,
         lookback_days: int = LOOKBACK_DAYS,
         max_symbols: int = MAX_SYMBOLS,
+        budget_seconds: float = BUDGET_SECONDS,
         clean: Callable[[str], str] = lambda s: s,
+        monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         self.llm = llm
         self.sources = dict(sources)
         self.lookback_days = lookback_days
         self.max_symbols = max_symbols
+        self.budget_seconds = budget_seconds
+        self._monotonic = monotonic
         self._clean = clean  # 오류 문장에 섞일 수 있는 비밀값(API 키)을 가린다
 
     def screen(
@@ -80,10 +87,13 @@ class BuyScreener:
             by_symbol.setdefault((s.market, s.symbol), []).append(s)
 
         results: list[ScreenResult] = []
+        started = self._monotonic()
         for i, ((market, symbol), sigs) in enumerate(by_symbol.items()):
             since = today - timedelta(days=self.lookback_days)
             if i >= self.max_symbols:
                 verdict, reason, items = Verdict.UNKNOWN, "판정 종목 수 상한을 넘어 건너뜀", []
+            elif self._monotonic() - started > self.budget_seconds:
+                verdict, reason, items = Verdict.UNKNOWN, "판정 시간 상한을 넘어 건너뜀", []
             else:
                 inst = instruments.get(symbol) or Instrument(market=market, symbol=symbol)
                 verdict, reason, items = self._judge(inst, since, today)
@@ -116,7 +126,7 @@ class BuyScreener:
         if not items:
             return Verdict.OK, NO_DISCLOSURES, []
         try:
-            answer = self.llm.complete(system=SYSTEM, prompt=_prompt(inst, items), max_tokens=300)
+            answer = self.llm.complete(system=SYSTEM, prompt=_prompt(inst, items), max_tokens=2000)
             data = parse_json_object(answer)
             verdict = Verdict(str(data.get("verdict", "")).upper())
             if verdict is Verdict.UNKNOWN:

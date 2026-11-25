@@ -1,5 +1,6 @@
 """설정에 맞는 증권사, 저장소, 알림을 만든다."""
 
+import logging
 from pathlib import Path
 
 import pandas as pd
@@ -13,6 +14,7 @@ from trading.core.clock import now_utc, trading_date
 from trading.core.log import redact
 from trading.core.models import Market
 from trading.llm.base import LLMClient
+from trading.llm.claude import ClaudeLLM
 from trading.llm.dart import DartSource
 from trading.llm.edgar import EdgarSource
 from trading.llm.screen import BuyScreener, DisclosureSource
@@ -22,6 +24,8 @@ from trading.storage.base import Store
 from trading.storage.memory import MemoryStore
 from trading.storage.supabase import SupabaseStore
 from trading.universe import BENCHMARKS, Universe
+
+logger = logging.getLogger(__name__)
 
 TOKEN_DIR = Path(".cache")
 
@@ -115,10 +119,20 @@ def build_notifier(settings: Settings, store: Store) -> Notifier:
 
 
 def build_llm(settings: Settings) -> LLMClient | None:
-    """LLM 보조 기능용 클라이언트. LLM_PROVIDER가 none이면 None(LLM 기능을 쓰지 않는다)."""
-    if settings.llm_provider == "none":
+    """LLM 보조 기능용 클라이언트. 쓰지 않거나 설정이 모자라면 None.
+
+    LLM은 덤이라 설정이 틀려도 매매 실행을 멈추지 않는다. 로그에 이유만 남긴다.
+    """
+    provider = settings.llm_provider.strip().lower()
+    if provider in ("", "none"):
         return None
-    raise SetupError(f"LLM_PROVIDER={settings.llm_provider} 어댑터가 아직 없습니다")
+    if provider != "anthropic":
+        logger.warning("LLM_PROVIDER=%s는 지원하지 않아 LLM 기능을 끕니다", provider)
+        return None
+    if not settings.llm_api_key:
+        logger.warning("LLM_API_KEY가 없어 LLM 기능을 끕니다")
+        return None
+    return ClaudeLLM(settings.llm_api_key.get_secret_value(), settings.llm_model)
 
 
 def build_screener(settings: Settings, llm: LLMClient | None) -> BuyScreener | None:
@@ -129,7 +143,8 @@ def build_screener(settings: Settings, llm: LLMClient | None) -> BuyScreener | N
     if settings.llm_screen == "off":
         return None
     if llm is None:
-        raise SetupError("LLM_SCREEN을 쓰려면 LLM_PROVIDER 설정이 필요합니다")
+        logger.warning("LLM 설정이 없어 악재 판정을 하지 않습니다")
+        return None
     sources: dict[Market, DisclosureSource] = {}
     if settings.dart_api_key:
         sources[Market.KR] = DartSource(settings.dart_api_key.get_secret_value())

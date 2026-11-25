@@ -338,14 +338,17 @@ LLM이 없는 것처럼 지나간다. 변수가 없으면 지금처럼 돈다.
 
 | 종류 | 이름 | 값 |
 |---|---|---|
-| Secret | `LLM_API_KEY` | LLM 회사의 API 키 |
-| Variable | `LLM_PROVIDER` | LLM 회사 이름(지원하는 값은 `.env.example` 참고). 어댑터가 없는 값을 넣으면 실행이 설정 오류로 멈추니 지원하는 값만 넣는다 |
-| Variable | `LLM_MODEL` | 모델 이름. 하루 몇 번 짧게 부르므로 작고 싼 모델로 충분하다 |
+| Secret | `LLM_API_KEY` | Anthropic API 키(`sk-ant-...`). [Claude Console](https://platform.claude.com) > API Keys에서 만든다 |
+| Variable | `LLM_PROVIDER` | `anthropic`. 값이 틀리거나 키가 없으면 LLM 기능만 꺼지고 매매는 그대로 돈다(Actions 로그에 이유가 남는다) |
+| Variable | `LLM_MODEL` | (선택) 비우면 `claude-opus-5-5`. 비용을 줄이려면 `claude-haiku-5-5` |
 | Variable | `LLM_SCREEN` | `shadow`(악재 판정 기록) 또는 넣지 않음(끔) |
 | Secret | `DART_API_KEY` | (악재 판정, 국내) [OpenDART](https://opendart.fss.or.kr) 가입 후 인증키 신청(무료) |
 | Variable | `SEC_USER_AGENT` | (악재 판정, 미국) `stocktrade 본인메일주소`. SEC가 요청마다 연락처를 요구한다 |
 
-- 요약만 쓰려면 `LLM_API_KEY`, `LLM_PROVIDER`, `LLM_MODEL`만 넣는다.
+- 요약만 쓰려면 `LLM_API_KEY`, `LLM_PROVIDER`만 넣는다.
+- 비용(대략): 실행마다 요약 1번 + 매수 신호 종목 수만큼 판정이라 하루 몇 번이다. `claude-opus-5-5`로 한 달
+  몇 달러, `claude-haiku-5-5`로 몇십 센트 수준이다. Console의 Usage 화면에서 실제 사용량을 본다.
+- 판정은 주문 앞에서 돌기 때문에 2분을 넘기면 남은 종목은 '판정 못 함'으로 두고 주문으로 넘어간다.
 - 공시 출처가 없는 시장의 매수 신호는 '판정 못 함'으로 기록된다.
 - 로컬에서 쓸 때는 `.env`에 같은 이름으로 넣는다.
 

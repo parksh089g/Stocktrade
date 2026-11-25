@@ -161,11 +161,6 @@ def test_llm_is_off_by_default():
     assert build_screener(s, None) is None
 
 
-def test_screen_needs_llm():
-    with pytest.raises(SetupError, match="LLM_PROVIDER"):
-        build_screener(settings(llm_screen="shadow"), None)
-
-
 def test_screen_sources_follow_settings():
     llm = FakeLLM()
     only_kr = build_screener(settings(llm_screen="shadow", dart_api_key="dart-key-1"), llm)

@@ -164,6 +164,16 @@ def test_market_without_source_is_unknown():
     assert r.verdict is Verdict.UNKNOWN and "미국" in r.reason
 
 
+def test_time_budget_skips_remaining_symbols():
+    llm = FakeLLM('{"verdict": "OK", "reason": "일상 공시"}')
+    source = Source({s: [disclosure("분기보고서")] for s in ("A", "B")})
+    ticks = iter([0, 0, 500])  # 시작, A 판정 전, B 판정 전
+    s = screener(llm, source, budget_seconds=120, monotonic=lambda: next(ticks))
+    results = s.screen([signal("A"), signal("B")], {}, TODAY)
+    assert [r.verdict for r in results] == [Verdict.OK, Verdict.UNKNOWN]
+    assert "시간 상한" in results[1].reason
+
+
 def test_symbol_limit():
     llm = FakeLLM('{"verdict": "OK", "reason": "일상 공시"}')
     source = Source({s: [disclosure("분기보고서")] for s in ("A", "B", "C")})

@@ -39,7 +39,7 @@ def summarize(llm: LLMClient, title: str, body: str) -> str | None:
     """알림 제목과 본문으로 요약 문장을 만든다. 실패하거나 믿을 수 없으면 None."""
     prompt = f"<실행결과>\n{title}\n{body}\n</실행결과>"
     try:
-        answer = llm.complete(system=SYSTEM, prompt=prompt, max_tokens=400)
+        answer = llm.complete(system=SYSTEM, prompt=prompt, max_tokens=2000)
     except LLMError as e:
         logger.warning("실행 요약 실패: %s", e)
         return None
