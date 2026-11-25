@@ -317,6 +317,28 @@ npm test       # 계산(비중, 성적, 시간 표기) 시험
 3. 주소는 `https://stocktrade.pages.dev`다(같은 이름이 이미 있으면 올릴 때 나오는 주소를 쓴다).
    웹앱을 고치면 다시 `npm run deploy`.
 
+#### 자동으로 올리기 (GitHub Actions, 권장)
+
+한 번 설정해 두면 웹앱이 바뀌어 main에 머지될 때마다 `webapp-deploy` 워크플로가 시험하고 빌드해서 올린다.
+위의 1~2단계(PC에서 로그인과 `npm run deploy`)는 하지 않아도 되고, Pages 프로젝트가 없으면 처음 실행 때 만든다.
+PR(포크 포함)에서는 돌지 않는다.
+
+1. Cloudflare 토큰 만들기: Cloudflare 화면 오른쪽 위 사람 아이콘 > **My Profile > API Tokens > Create Token >
+   Custom token**. 권한은 **Account / Cloudflare Pages / Edit** 하나만 주고, Account Resources는 내 계정만 고른다.
+   만든 토큰은 한 번만 보이니 바로 2번에 넣는다. 채팅이나 파일에 붙여 넣지 않는다.
+2. GitHub 저장소 **Settings > Secrets and variables > Actions**:
+   - **Secrets** 탭에 `CLOUDFLARE_API_TOKEN` = 1번 토큰
+   - **Variables** 탭에 아래 넷. 모두 화면에 실리는 공개용 값이라 Variables에 둬도 된다.
+
+   | 이름 | 값 |
+   |---|---|
+   | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare 화면 **Workers & Pages** 오른쪽의 Account ID |
+   | `VITE_SUPABASE_URL` | 6-2 표와 같다 |
+   | `VITE_SUPABASE_PUBLISHABLE_KEY` | 6-2 표와 같다(`sb_publishable_...`, secret 키를 넣으면 워크플로가 멈춘다) |
+   | `VITE_VAPID_PUBLIC_KEY` | 6-2 표와 같다(GitHub Secrets의 `VAPID_PRIVATE_KEY`와 짝) |
+3. **Actions > webapp-deploy > Run workflow**로 한 번 돌린다. 값이 빠져 있으면 경고만 남기고 올리지 않는다.
+   끝나면 로그 마지막 줄에 주소가 나온다.
+
 ### 6-5. 폰에 설치하고 알림 켜기 (안드로이드 크롬)
 
 1. 폰 크롬에서 주소를 열고 메뉴(⋮) > **앱 설치**(또는 **홈 화면에 추가**).

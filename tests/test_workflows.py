@@ -209,3 +209,29 @@ def test_db_schema_runs_only_on_main_of_this_repo():
 def test_no_workflow_runs_untrusted_pr_code_with_secrets():
     for path in WORKFLOWS.glob("*.yml"):
         assert "pull_request_target" not in path.read_text(), path.name
+
+
+# ---- 웹앱 자동 배포(webapp-deploy.yml) ----
+
+
+def test_webapp_deploy_runs_only_on_main_of_this_repo():
+    text = read("webapp-deploy.yml")
+    trigger = text.split("\non:\n", 1)[1].split("\npermissions:", 1)[0]
+    # PR(포크 포함)에서는 돌지 않는다: Cloudflare 토큰 Secret을 쓰기 때문
+    assert "pull_request" not in trigger
+    assert "    branches: [main]\n" in trigger and "      - webapp/**\n" in trigger
+    assert "workflow_dispatch" in trigger
+    assert (
+        "if: github.repository == 'parksh089g/Stocktrade' && github.ref == 'refs/heads/main'\n"
+        in text
+    )
+
+
+def test_webapp_deploy_builds_only_with_public_values():
+    text = read("webapp-deploy.yml")
+    # 웹앱 빌드에 들어가는 값은 공개용 Variables뿐이고, Secret은 Cloudflare 토큰 하나다
+    for line in re.findall(r"VITE_\w+: \$\{\{ (.+?) \}\}", text):
+        assert line.startswith("vars."), line
+    assert re.findall(r"secrets\.\w+", text) == ["secrets.CLOUDFLARE_API_TOKEN"]
+    assert "sb_publishable_*" in text
+    assert 'echo "$CLOUDFLARE_API_TOKEN' not in text
