@@ -4,6 +4,7 @@ import logging
 from pathlib import Path
 
 import pandas as pd
+from pydantic import SecretStr
 
 from trading.brokers.base import BrokerAdapter
 from trading.brokers.fake import make_demo_broker
@@ -152,3 +153,43 @@ def build_screener(settings: Settings, llm: LLMClient | None) -> BuyScreener | N
         sources[Market.US] = EdgarSource(settings.sec_user_agent)
     secrets = settings.secret_values()
     return BuyScreener(llm, sources, clean=lambda text: redact(text, secrets))
+
+
+# 웹앱 설정 화면에서 넣을 수 있는 값(engine_settings 칸 → Settings 이름). 비밀값은 Vault에 있다.
+STORE_SETTINGS = ("llm_provider", "llm_model", "llm_summary", "llm_screen", "sec_user_agent")
+STORE_SECRETS = ("llm_api_key", "dart_api_key")
+
+
+def with_store_config(settings: Settings, store: Store | None = None) -> Settings:
+    """GitHub(환경변수, .env)에 없는 LLM 설정을 웹앱에서 넣은 값으로 채운다.
+
+    GitHub에 값이 있으면 그것이 먼저다. 읽지 못하면 로그만 남기고 그대로 돌려준다
+    (LLM 기능만 꺼질 뿐 매매는 멈추지 않는다).
+    """
+    if store is None:
+        if not settings.supabase_url or not settings.supabase_service_key:
+            return settings
+        store = SupabaseStore(
+            settings.supabase_url,
+            settings.supabase_service_key.get_secret_value(),
+            settings.trading_mode,
+        )
+    try:
+        config = store.get_engine_config()
+    except Exception as e:
+        logger.warning("웹앱 엔진 설정을 읽지 못했습니다(LLM 기능에만 영향): %s", type(e).__name__)
+        return settings
+    given = settings.model_fields_set
+    update: dict = {}
+    for name in STORE_SETTINGS:
+        value = config.settings.get(name)
+        if name not in given and value not in (None, ""):
+            update[name] = value
+    for name in STORE_SECRETS:
+        value = config.secrets.get(name, "").strip()
+        if name not in given and value:
+            update[name] = SecretStr(value)
+    if not update:
+        return settings
+    logger.info("웹앱에서 넣은 설정을 씁니다: %s", ", ".join(sorted(update)))
+    return settings.model_copy(update=update)

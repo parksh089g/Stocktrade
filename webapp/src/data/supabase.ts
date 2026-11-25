@@ -2,6 +2,7 @@
 import { createClient, type PostgrestError } from "@supabase/supabase-js";
 import type {
   Balance,
+  EngineSettings,
   Benchmark,
   Market,
   Mode,
@@ -9,12 +10,14 @@ import type {
   OrderRow,
   PositionRow,
   RunRow,
+  SecretStatus,
   Snapshot,
   SwitchState,
 } from "../lib/types";
 import { MARKETS } from "../lib/types";
 import type { DataSource, User } from "./source";
 
+const ENGINE_SETTINGS_COLUMNS = "llm_provider,llm_model,llm_summary,llm_screen,sec_user_agent,updated_at";
 const RUN_LIST_COLUMNS = "id,mode,market,status,message,error,started_at,finished_at,summary";
 // PostgREST가 한 번에 돌려주는 최대 행 수(Supabase 기본값)
 const MAX_ROWS = 1000;
@@ -99,6 +102,27 @@ export function createSupabaseSource(url: string, key: string): DataSource {
       );
       if (!row) throw new DataError("스위치를 바꿀 권한이 없습니다(소유자 등록을 확인하세요)");
       return row;
+    },
+
+    async getEngineSettings() {
+      const result = await db.from("engine_settings").select(ENGINE_SETTINGS_COLUMNS).eq("id", 1).maybeSingle();
+      // 표가 아직 없으면(schema.sql을 다시 실행하기 전) 화면에서 안내한다
+      if (result.error && /engine_settings/.test(result.error.message)) return null;
+      return one<EngineSettings>(result);
+    },
+    async saveEngineSettings(settings) {
+      const row = one<EngineSettings>(
+        await db.from("engine_settings").update(settings).eq("id", 1).select(ENGINE_SETTINGS_COLUMNS).maybeSingle(),
+      );
+      if (!row) throw new DataError("설정을 바꿀 권한이 없습니다(소유자 등록을 확인하세요)");
+      return row;
+    },
+    async secretStatus() {
+      return rows<SecretStatus>(await db.rpc("engine_secret_status"));
+    },
+    async setSecret(name, value) {
+      const { error } = await db.rpc("set_engine_secret", { secret_name: name, secret_value: value });
+      if (error) throw new DataError(/invalid secret/.test(error.message) ? "키 형식이 맞지 않습니다" : error.message);
     },
 
     async latestMode() {

@@ -40,7 +40,9 @@
   - 2026-11-24 코드: `trading/llm/`(LLM 인터페이스, 요약, 판정, DART/SEC EDGAR 공시), 엔진 연결(주문에는 영향 없음,
     실패해도 경고 없음), 실행 기록 `report.ai_summary`/`report.screens`, Supabase 보기 `llm_screens`, 워크플로 변수.
     2026-11-25 Anthropic Claude 어댑터(`trading/llm/claude.py`, 기본 claude-opus-5-5, effort low). LLM 설정이
-    틀려도 매매는 멈추지 않는다. 남은 것: GitHub Secrets/변수(SETUP 7장), 4~8주 섀도 기록 후 반영 여부 결정.
+    틀려도 매매는 멈추지 않는다.
+  - 2026-11-25 웹앱 설정 화면 'AI 기능': 키는 Supabase Vault(웹앱은 넣기/지우기만), 설정은 engine_settings 표.
+    엔진은 GitHub에 없는 값만 웹앱 값으로 채운다. 남은 것: GitHub Secrets/변수(SETUP 7장), 4~8주 섀도 기록 후 반영 여부 결정.
   - LLM이 종목을 고르거나 비중을 정하는 것은 백테스트로 검증할 수 없어 하지 않는다. 판정은 매수를 빼는 쪽으로만
     쓸 수 있고, 매도와 손절은 막지 않는다.
 

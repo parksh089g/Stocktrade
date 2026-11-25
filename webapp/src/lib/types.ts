@@ -167,3 +167,29 @@ export interface EquityRow {
   balance: Balance;
   benchmark: Benchmark | null;
 }
+
+// ---- 엔진 설정(웹앱 설정 화면, engine_settings 표와 Supabase Vault) ----
+
+export type LlmProvider = "none" | "anthropic";
+export type LlmScreen = "off" | "shadow";
+
+export interface EngineSettings {
+  llm_provider: LlmProvider;
+  llm_model: string; // 비우면 엔진 기본값(claude-opus-5-5)
+  llm_summary: boolean;
+  llm_screen: LlmScreen;
+  sec_user_agent: string;
+  updated_at: string;
+}
+
+export type EngineSettingsInput = Omit<EngineSettings, "updated_at">;
+
+/** 웹앱에서 넣는 비밀값 이름. 값은 Vault에 암호화돼 있고 웹앱은 다시 읽지 못한다. */
+export type SecretName = "llm_api_key" | "dart_api_key";
+
+/** 넣어 둔 비밀값의 끝 4자리와 바꾼 시각. 없는 이름은 목록에 없다. */
+export interface SecretStatus {
+  name: SecretName;
+  hint: string;
+  updated_at: string;
+}

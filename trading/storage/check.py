@@ -41,6 +41,10 @@ def main() -> int:
         # 나중에 생긴 칸. 엔진이 주문을 기록할 때 쓰므로 없으면 주문 기록이 실패한다
         store.check_columns("orders", ["reason"])
         print("주문 이유 칸(reason) 확인")
+        # 웹앱에서 넣는 LLM 설정과 키. 없어도 매매는 되지만 웹앱 설정 화면이 저장하지 못한다
+        config = store.get_engine_config()
+        names = ", ".join(sorted(config.secrets)) or "없음"
+        print(f"웹앱 엔진 설정 확인(LLM {config.settings.get('llm_provider', '?')}, 키: {names})")
         print(f"푸시 받을 기기: {len(store.get_push_subscriptions())}대")
 
         store.upsert_position(

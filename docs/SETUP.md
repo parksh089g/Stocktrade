@@ -332,30 +332,44 @@ npm test       # 계산(비중, 성적, 시간 표기) 시험
 실행 요약과 매수 후보 악재 판정(섀도 모드)을 켠다. 둘 다 주문과 리스크 규칙에는 손대지 않고, 실패하면
 LLM이 없는 것처럼 지나간다. 변수가 없으면 지금처럼 돈다.
 
-### 7-1. 비밀값과 변수 넣기
+### 7-1. 웹앱 설정 화면에서 넣기 (권장)
 
-4-1, 4-2와 같은 화면에서 넣는다.
+1. Supabase SQL Editor에서 `supabase/schema.sql`을 한 번 더 실행한다(설정 표 `engine_settings`, Vault 함수,
+   보기 `llm_screens`가 생긴다).
+2. 웹앱 **설정 > AI 기능**에서
+   - **Anthropic API 키**: [Claude Console](https://platform.claude.com) > API Keys에서 만든 키(`sk-ant-...`)
+   - (악재 판정, 국내) **OpenDART 인증키**: [OpenDART](https://opendart.fss.or.kr) 가입 후 신청(무료, 40자리)
+   - **AI 사용**을 Claude로, 필요하면 **악재 판정**을 '기록만'으로, 미국 공시를 보려면 **SEC 연락처**
+     (`stocktrade 본인메일주소`, SEC가 요청마다 연락처를 요구한다)를 넣고 **설정 저장**.
+3. 다음 실행부터 쓴다.
 
-| 종류 | 이름 | 값 |
-|---|---|---|
-| Secret | `LLM_API_KEY` | Anthropic API 키(`sk-ant-...`). [Claude Console](https://platform.claude.com) > API Keys에서 만든다 |
-| Variable | `LLM_PROVIDER` | `anthropic`. 값이 틀리거나 키가 없으면 LLM 기능만 꺼지고 매매는 그대로 돈다(Actions 로그에 이유가 남는다) |
-| Variable | `LLM_MODEL` | (선택) 비우면 `claude-opus-5-5`. 비용을 줄이려면 `claude-haiku-5-5` |
-| Variable | `LLM_SCREEN` | `shadow`(악재 판정 기록) 또는 넣지 않음(끔) |
-| Secret | `DART_API_KEY` | (악재 판정, 국내) [OpenDART](https://opendart.fss.or.kr) 가입 후 인증키 신청(무료) |
-| Variable | `SEC_USER_AGENT` | (악재 판정, 미국) `stocktrade 본인메일주소`. SEC가 요청마다 연락처를 요구한다 |
-
-- 요약만 쓰려면 `LLM_API_KEY`, `LLM_PROVIDER`만 넣는다.
+- 키는 Supabase Vault에 암호화해 저장된다. 웹앱은 넣기와 지우기만 하고 다시 읽지 못한다(끝 4자리와 시각만 보인다).
+  꺼내는 함수는 엔진의 secret 키로만 부를 수 있다.
+- 모델은 비우면 `claude-opus-5-5`. 비용을 줄이려면 `claude-haiku-5-5`.
 - 비용(대략): 실행마다 요약 1번 + 매수 신호 종목 수만큼 판정이라 하루 몇 번이다. `claude-opus-5-5`로 한 달
   몇 달러, `claude-haiku-5-5`로 몇십 센트 수준이다. Console의 Usage 화면에서 실제 사용량을 본다.
 - 판정은 주문 앞에서 돌기 때문에 2분을 넘기면 남은 종목은 '판정 못 함'으로 두고 주문으로 넘어간다.
-- 공시 출처가 없는 시장의 매수 신호는 '판정 못 함'으로 기록된다.
-- 로컬에서 쓸 때는 `.env`에 같은 이름으로 넣는다.
+- 키가 없거나 설정이 틀려도 매매는 멈추지 않고 LLM 기능만 꺼진다(Actions 로그에 이유가 남는다).
+
+### 7-1b. GitHub에 넣기 (대신 쓸 수 있음)
+
+GitHub에 값이 있으면 웹앱 값보다 먼저 쓴다. 4-1, 4-2와 같은 화면에서 넣는다.
+
+| 종류 | 이름 | 값 |
+|---|---|---|
+| Secret | `LLM_API_KEY` | Anthropic API 키 |
+| Variable | `LLM_PROVIDER` | `anthropic` |
+| Variable | `LLM_MODEL` | (선택) 모델 이름 |
+| Variable | `LLM_SCREEN` | `shadow`(악재 판정 기록) 또는 넣지 않음 |
+| Secret | `DART_API_KEY` | OpenDART 인증키 |
+| Variable | `SEC_USER_AGENT` | `stocktrade 본인메일주소` |
+
+저장소가 공개라서 Actions 로그는 누구나 볼 수 있다. Secrets는 로그에서 가려지지만 Variables에는 비밀값을 넣지 않는다.
 
 ### 7-2. 확인
 
-1. Supabase SQL Editor에서 `supabase/schema.sql`을 한 번 더 실행한다(보기 `llm_screens`가 생긴다).
-2. 4-3처럼 손으로 시험 실행(dry_run)을 돌리고 **설정 표시** 단계에 LLM 설정이 보이는지 본다.
+1. 4-3처럼 손으로 시험 실행(dry_run)을 돌린다. 웹앱에서 넣었다면 **실행** 단계 로그에 `웹앱에서 넣은 설정을
+   씁니다: llm_api_key, llm_provider, …`가 나온다(GitHub에 넣었다면 **설정 표시** 단계에 보인다).
    매수 신호가 있던 날이면 알림 맨 앞에 `요약(AI):` 줄과 `악재 판정(기록만, …)` 줄이 붙는다.
 
 ### 7-3. 섀도 모드 결과 보기
@@ -370,4 +384,5 @@ from llm_screens where mode = 'paper' order by started_at desc;
 
 ### 7-4. 끄기
 
-`LLM_SCREEN`을 지우면 판정을, `LLM_PROVIDER`를 지우면 LLM 기능 전체를 끈다.
+웹앱 **설정 > AI 기능**에서 끈다(GitHub에 넣었다면 `LLM_SCREEN`을 지우면 판정을, `LLM_PROVIDER`를 지우면
+LLM 기능 전체를 끈다).

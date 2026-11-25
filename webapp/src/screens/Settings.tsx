@@ -1,10 +1,19 @@
-// 설정: 일시정지 스위치, 이 기기 알림, 보는 기록(모의투자/실전), 계정.
+// 설정: 일시정지 스위치, AI 기능(LLM 키와 설정), 이 기기 알림, 보는 기록(모의투자/실전), 계정.
 import { useEffect, useState } from "preact/hooks";
 import { Banner, Card } from "../components/ui";
 import { readStoredMode, useApp } from "../hooks";
+import {
+  CHEAP_MODEL,
+  DEFAULT_MODEL,
+  SECRET_LABEL,
+  maskedHint,
+  missingSources,
+  secretProblem,
+  settingsProblems,
+} from "../lib/engine";
 import { formatKst } from "../lib/format";
 import { disablePush, enablePush, pushState, type PushState } from "../lib/push";
-import type { Mode } from "../lib/types";
+import type { EngineSettings, EngineSettingsInput, Mode, SecretName, SecretStatus } from "../lib/types";
 
 function PauseCard() {
   const { source, switchState, setSwitchState } = useApp();
@@ -81,6 +90,267 @@ function PauseCard() {
           일시정지 켜기
         </button>
       )}
+    </Card>
+  );
+}
+
+
+const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));
+
+function SecretRow(props: { name: SecretName; status?: SecretStatus; help: string; onChanged: () => void }) {
+  const { source } = useApp();
+  const { name, status } = props;
+  const [value, setValue] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [error, setError] = useState("");
+
+  const save = async (next: string) => {
+    if (next) {
+      const problem = secretProblem(name, next);
+      if (problem) return setError(problem);
+    }
+    setBusy(true);
+    setError("");
+    try {
+      await source.setSecret(name, next.trim());
+      setValue("");
+      setConfirmDelete(false);
+      props.onChanged();
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div class="secret-row">
+      <label class="field">
+        <span>
+          {SECRET_LABEL[name]} ·{" "}
+          {status ? `넣어 둠 ${maskedHint(status.hint)} · ${formatKst(status.updated_at)}` : "없음"}
+        </span>
+        <input
+          type="password"
+          autocomplete="off"
+          spellcheck={false}
+          value={value}
+          placeholder={status ? "바꾸려면 새 키를 붙여 넣기" : "키 붙여 넣기"}
+          onInput={(e) => setValue(e.currentTarget.value)}
+        />
+      </label>
+      <p class="small" style={{ margin: "-6px 0 8px" }}>
+        {props.help}
+      </p>
+      {error && (
+        <p class="error-text" role="alert">
+          {error}
+        </p>
+      )}
+      <div class="choice">
+        <button class="btn primary" onClick={() => save(value)} disabled={busy || !value.trim()}>
+          {busy && !confirmDelete ? "저장 중…" : "저장"}
+        </button>
+        {status &&
+          (confirmDelete ? (
+            <button class="btn danger" onClick={() => save("")} disabled={busy}>
+              {busy ? "지우는 중…" : "정말 지우기"}
+            </button>
+          ) : (
+            <button class="btn" onClick={() => setConfirmDelete(true)} disabled={busy}>
+              지우기
+            </button>
+          ))}
+      </div>
+    </div>
+  );
+}
+
+function AiCard() {
+  const { source } = useApp();
+  const [saved, setSaved] = useState<EngineSettings | null | undefined>(undefined);
+  const [draft, setDraft] = useState<EngineSettingsInput | null>(null);
+  const [secrets, setSecrets] = useState<SecretStatus[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  const loadSecrets = () => source.secretStatus().then(setSecrets, (err) => setError(errorText(err)));
+  useEffect(() => {
+    source.getEngineSettings().then(
+      (s) => {
+        setSaved(s);
+        if (s) {
+          const { updated_at: _, ...input } = s;
+          setDraft(input);
+        }
+      },
+      (err) => {
+        setSaved(null);
+        setError(errorText(err));
+      },
+    );
+    loadSecrets();
+  }, []);
+
+  if (saved === undefined)
+    return (
+      <Card>
+        <h2>AI 기능</h2>
+        <p class="small">불러오는 중…</p>
+      </Card>
+    );
+  if (saved === null || !draft)
+    return (
+      <Card>
+        <h2>AI 기능</h2>
+        <p class="small">
+          설정 표가 없습니다. Supabase SQL Editor에서 supabase/schema.sql을 한 번 더 실행해 주세요.
+          {error && ` (${error})`}
+        </p>
+      </Card>
+    );
+
+  const keys = new Set(secrets.map((s) => s.name));
+  const problems = settingsProblems(draft, keys);
+  const missing = missingSources(draft, keys);
+  const set = (patch: Partial<EngineSettingsInput>) => {
+    setDraft({ ...draft, ...patch });
+    setMessage("");
+  };
+  const save = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const row = await source.saveEngineSettings({
+        ...draft,
+        llm_model: draft.llm_model.trim(),
+        sec_user_agent: draft.sec_user_agent.trim(),
+      });
+      setSaved(row);
+      setMessage(`저장했습니다 · ${formatKst(row.updated_at)}. 다음 실행부터 씁니다.`);
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const on = draft.llm_provider !== "none";
+
+  return (
+    <Card>
+      <h2>AI 기능</h2>
+      <p class="small" style={{ margin: "0 0 4px" }}>
+        실행 요약(알림 맨 앞 2~3줄)과 매수 후보 악재 판정(기록만, 주문에는 반영 안 함). 주문과 리스크 한도에는 손대지
+        않고, 실패하면 AI 없이 지금처럼 돕니다.
+      </p>
+      <p class="basis">
+        키는 Supabase Vault에 암호화해 저장하고, 이 앱에서도 다시 볼 수 없습니다(끝 4자리만). GitHub 저장소에 같은 이름의
+        값이 있으면 그 값이 먼저입니다.
+      </p>
+
+      <SecretRow
+        name="llm_api_key"
+        status={secrets.find((s) => s.name === "llm_api_key")}
+        help="Claude Console(platform.claude.com) → API Keys에서 만든 키"
+        onChanged={loadSecrets}
+      />
+      <SecretRow
+        name="dart_api_key"
+        status={secrets.find((s) => s.name === "dart_api_key")}
+        help="(악재 판정, 국내 공시) opendart.fss.or.kr에서 무료로 받는 인증키"
+        onChanged={loadSecrets}
+      />
+
+      <div class="field">
+        <span>AI 사용</span>
+        <div class="choice">
+          <button class="btn" aria-pressed={!on} onClick={() => set({ llm_provider: "none", llm_screen: "off" })}>
+            끄기
+          </button>
+          <button class="btn" aria-pressed={on} onClick={() => set({ llm_provider: "anthropic" })}>
+            Claude
+          </button>
+        </div>
+      </div>
+
+      {on && (
+        <>
+          <label class="field">
+            <span>모델(비우면 {DEFAULT_MODEL})</span>
+            <input
+              value={draft.llm_model}
+              placeholder={DEFAULT_MODEL}
+              autocomplete="off"
+              spellcheck={false}
+              onInput={(e) => set({ llm_model: e.currentTarget.value })}
+            />
+          </label>
+          <p class="small" style={{ margin: "-6px 0 8px" }}>
+            비용을 줄이려면{" "}
+            <button class="btn link small" onClick={() => set({ llm_model: CHEAP_MODEL })}>
+              {CHEAP_MODEL}
+            </button>
+          </p>
+          <div class="field">
+            <span>실행 요약</span>
+            <div class="choice">
+              <button class="btn" aria-pressed={!draft.llm_summary} onClick={() => set({ llm_summary: false })}>
+                끄기
+              </button>
+              <button class="btn" aria-pressed={draft.llm_summary} onClick={() => set({ llm_summary: true })}>
+                켜기
+              </button>
+            </div>
+          </div>
+          <div class="field">
+            <span>악재 판정</span>
+            <div class="choice">
+              <button class="btn" aria-pressed={draft.llm_screen === "off"} onClick={() => set({ llm_screen: "off" })}>
+                끄기
+              </button>
+              <button
+                class="btn"
+                aria-pressed={draft.llm_screen === "shadow"}
+                onClick={() => set({ llm_screen: "shadow" })}
+              >
+                기록만
+              </button>
+            </div>
+          </div>
+          {draft.llm_screen === "shadow" && (
+            <label class="field">
+              <span>SEC 연락처(미국 공시, 예: stocktrade 이메일주소)</span>
+              <input
+                value={draft.sec_user_agent}
+                maxLength={200}
+                autocomplete="off"
+                onInput={(e) => set({ sec_user_agent: e.currentTarget.value })}
+              />
+            </label>
+          )}
+        </>
+      )}
+
+      {missing.length > 0 && <p class="small">공시를 보지 못하는 시장: {missing.join(", ")}. 그 시장은 '판정 못 함'으로 기록됩니다.</p>}
+      {problems.map((p) => (
+        <p key={p} class="error-text">
+          {p}
+        </p>
+      ))}
+      {error && (
+        <p class="error-text" role="alert">
+          {error}
+        </p>
+      )}
+      {message && <p class="small">{message}</p>}
+      <button class="btn primary block" onClick={save} disabled={busy || problems.length > 0}>
+        {busy ? "저장 중…" : "설정 저장"}
+      </button>
+      <p class="basis" style={{ marginTop: 8 }}>
+        마지막 저장 {formatKst(saved.updated_at)}
+      </p>
     </Card>
   );
 }
@@ -191,6 +461,7 @@ export function Settings() {
         </Banner>
       )}
       <PauseCard />
+      <AiCard />
       <PushCard />
       <ModeCard />
       <Card>

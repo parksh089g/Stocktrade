@@ -63,7 +63,8 @@ uv run python -m trading.engine --market KR --ignore-hours --dry-run --stop-loss
 
 ## LLM 보조 기능(선택)
 
-`trading/llm/`(Anthropic Claude, 공식 SDK). LLM은 주문을 내거나 리스크 규칙을 바꾸지 않는다. 설정은 [docs/SETUP.md](docs/SETUP.md) 7장.
+`trading/llm/`(Anthropic Claude, 공식 SDK). LLM은 주문을 내거나 리스크 규칙을 바꾸지 않는다. 키와 설정은 웹앱
+**설정 > AI 기능**에서 넣는다(키는 Supabase Vault에 암호화). 자세한 것은 [docs/SETUP.md](docs/SETUP.md) 7장.
 - 실행 요약: 주문·체결·주문 안 함이 있던 실행의 결과를 2~3줄로 풀어 알림 맨 앞에 붙인다. 결과에 없는 가격이나
   수량을 쓰면 요약을 버린다.
 - 매수 후보 악재 판정(섀도 모드): 매수 신호 종목의 최근 2주 공시(국내 DART, 미국 SEC EDGAR)를 보고 유상증자,

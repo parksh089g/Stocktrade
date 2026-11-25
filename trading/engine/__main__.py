@@ -23,6 +23,7 @@ from trading.engine.factory import (
     build_notifier,
     build_screener,
     build_store,
+    with_store_config,
 )
 from trading.engine.report import RunStatus
 from trading.engine.runner import Engine
@@ -55,6 +56,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     settings = Settings()
+    setup_logging(settings.secret_values())
+    # 웹앱 설정 화면에서 넣은 LLM 설정과 키(GitHub에 없는 것만). 키도 로그에서 가린다.
+    settings = with_store_config(settings)
     setup_logging(settings.secret_values())
     market = Market(args.market)
 

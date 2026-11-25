@@ -113,6 +113,19 @@ create table if not exists public.engine_cache (
   updated_at timestamptz not null default now()
 );
 
+-- 엔진 설정(행 하나). 웹앱 설정 화면에서 소유자가 바꾼다. 비밀값은 여기 두지 않고 Vault에 둔다(아래 함수).
+-- 엔진은 GitHub에 같은 이름의 값이 없을 때만 이 값을 쓴다
+create table if not exists public.engine_settings (
+  id smallint primary key default 1 check (id = 1),
+  llm_provider text not null default 'none' check (llm_provider in ('none', 'anthropic')),
+  llm_model text not null default '' check (length(llm_model) <= 100),
+  llm_summary boolean not null default true,
+  llm_screen text not null default 'off' check (llm_screen in ('off', 'shadow')),
+  sec_user_agent text not null default '' check (length(sec_user_agent) <= 200),
+  updated_at timestamptz not null default now()
+);
+insert into public.engine_settings (id) values (1) on conflict (id) do nothing;
+
 -- 웹앱을 쓸 수 있는 사람. 웹앱에서 처음 가입한 뒤 대시보드에서 직접 한 줄 넣는다
 create table if not exists public.owners (
   user_id uuid primary key references auth.users (id) on delete cascade
@@ -141,6 +154,8 @@ create or replace trigger positions_touch before update on public.positions
   for each row execute function public.touch_updated_at();
 create or replace trigger orders_touch before update on public.orders
   for each row execute function public.touch_updated_at();
+create or replace trigger engine_settings_touch before update on public.engine_settings
+  for each row execute function public.touch_updated_at();
 create or replace trigger engine_cache_touch before update on public.engine_cache
   for each row execute function public.touch_updated_at();
 
@@ -153,6 +168,7 @@ alter table public.runs enable row level security;
 alter table public.push_subscriptions enable row level security;
 alter table public.owners enable row level security;  -- 정책 없음: 웹앱에서는 볼 수 없다
 alter table public.engine_cache enable row level security;  -- 정책 없음: 웹앱에서는 볼 수 없다
+alter table public.engine_settings enable row level security;
 
 drop policy if exists "owner read" on public.trading_switch;
 create policy "owner read" on public.trading_switch
@@ -178,3 +194,83 @@ create policy "owner manages own" on public.push_subscriptions
   for all to authenticated
   using (public.is_owner() and user_id = auth.uid())
   with check (public.is_owner() and user_id = auth.uid());
+
+drop policy if exists "owner read" on public.engine_settings;
+create policy "owner read" on public.engine_settings
+  for select to authenticated using (public.is_owner());
+drop policy if exists "owner update" on public.engine_settings;
+create policy "owner update" on public.engine_settings
+  for update to authenticated using (public.is_owner()) with check (public.is_owner());
+
+-- ---------------------------------------------------------------- 엔진 비밀값(Supabase Vault)
+-- 웹앱에서 넣는 API 키(LLM, DART). Vault가 암호화해서 저장한다.
+-- 웹앱(소유자)은 넣기/지우기와 '넣었는지, 끝 4자리, 바꾼 시각'만 볼 수 있고 값은 다시 읽지 못한다.
+-- 값을 꺼내는 함수는 엔진(secret 키, service_role)만 부를 수 있다.
+-- 이름은 아래 목록만 받는다. Vault 안에서는 stocktrade_ 를 앞에 붙여 다른 비밀값과 섞이지 않게 한다.
+
+create extension if not exists supabase_vault with schema vault;
+
+create or replace function public.engine_secret_names() returns text[]
+language sql immutable set search_path = ''
+as $$ select array['llm_api_key', 'dart_api_key'] $$;
+
+create or replace function public.set_engine_secret(secret_name text, secret_value text)
+returns void
+language plpgsql security definer set search_path = ''
+as $$
+declare
+  existing uuid;
+  vault_name text := 'stocktrade_' || secret_name;
+  value text := btrim(coalesce(secret_value, ''));
+begin
+  if not public.is_owner() then
+    raise exception 'not allowed' using errcode = '42501';
+  end if;
+  if not (secret_name = any (public.engine_secret_names())) then
+    raise exception 'unknown secret name' using errcode = '22023';
+  end if;
+  if length(value) > 500 or value ~ '\s' then
+    raise exception 'invalid secret value' using errcode = '22023';
+  end if;
+  select id into existing from vault.secrets where name = vault_name;
+  if value = '' then
+    delete from vault.secrets where id = existing;
+  elsif existing is null then
+    perform vault.create_secret(value, vault_name, 'stocktrade 엔진 비밀값(웹앱에서 넣음)');
+  else
+    perform vault.update_secret(existing, value, vault_name, 'stocktrade 엔진 비밀값(웹앱에서 넣음)');
+  end if;
+end
+$$;
+
+create or replace function public.engine_secret_status()
+returns table (name text, hint text, updated_at timestamptz)
+language plpgsql security definer set search_path = ''
+as $$
+begin
+  if not public.is_owner() then
+    raise exception 'not allowed' using errcode = '42501';
+  end if;
+  return query
+    select substr(d.name, length('stocktrade_') + 1), right(d.decrypted_secret, 4), d.updated_at
+    from vault.decrypted_secrets d
+    where d.name in (select 'stocktrade_' || n from unnest(public.engine_secret_names()) n);
+end
+$$;
+
+create or replace function public.get_engine_secrets()
+returns table (name text, value text)
+language sql security definer set search_path = ''
+as $$
+  select substr(d.name, length('stocktrade_') + 1), d.decrypted_secret
+  from vault.decrypted_secrets d
+  where d.name in (select 'stocktrade_' || n from unnest(public.engine_secret_names()) n)
+$$;
+
+-- 함수는 기본으로 누구나 부를 수 있어서 막고 필요한 쪽에만 연다
+revoke all on function public.set_engine_secret(text, text) from public, anon;
+revoke all on function public.engine_secret_status() from public, anon;
+revoke all on function public.get_engine_secrets() from public, anon, authenticated;
+grant execute on function public.set_engine_secret(text, text) to authenticated;
+grant execute on function public.engine_secret_status() to authenticated;
+grant execute on function public.get_engine_secrets() to service_role;
