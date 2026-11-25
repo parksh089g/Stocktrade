@@ -59,7 +59,10 @@ jobs:
         id: check
         run: |
           missing=""
-          for name in VITE_SUPABASE_URL VITE_SUPABASE_PUBLISHABLE_KEY VITE_VAPID_PUBLIC_KEY CLOUDFLARE_ACCOUNT_ID CLOUDFLARE_API_TOKEN; do
+          if [ -z "$VITE_VAPID_PUBLIC_KEY" ]; then
+            echo "::warning::웹 푸시 공개키가 없어 이번 웹앱에서는 알림 켜기가 동작하지 않습니다. Secret VAPID_PRIVATE_KEY를 넣고 다시 실행하세요(SETUP 6-5)."
+          fi
+          for name in VITE_SUPABASE_URL VITE_SUPABASE_PUBLISHABLE_KEY CLOUDFLARE_ACCOUNT_ID CLOUDFLARE_API_TOKEN; do
             if [ -z "${!name}" ]; then missing="$missing $name"; fi
           done
           if [ -n "$missing" ]; then
