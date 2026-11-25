@@ -22,6 +22,9 @@ from trading.core.models import (
 )
 from trading.engine.report import RunStatus
 from trading.engine.runner import Engine
+from trading.llm.base import FakeLLM, LLMError
+from trading.llm.models import Disclosure, Verdict
+from trading.llm.screen import BuyScreener, DisclosureSource
 from trading.notify.base import MemoryNotifier
 from trading.risk.config import RiskConfig
 from trading.risk.planner import ALREADY_ORDERED
@@ -843,3 +846,116 @@ def test_dry_run_does_not_mark_done():
     env.run()
     assert env.run().status is RunStatus.OK
     assert env.store.cache == {}
+
+
+# ---- LLM 보조 기능(요약, 악재 판정 섀도 모드) ----
+
+
+class OneSource(DisclosureSource):
+    def __init__(self, title: str = "주요사항보고서(유상증자결정)", error=None):
+        self.title = title
+        self.error = error
+        self.asked: list[str] = []
+
+    def recent(self, instrument, since, until):
+        self.asked.append(instrument.symbol)
+        if self.error:
+            raise self.error
+        return [Disclosure(title=self.title, filed=FRI, source="DART")]
+
+
+VETO = '{"verdict": "VETO", "reason": "유상증자 결정 공시"}'
+SUMMARY = (
+    "삼성전자 17주 매수 주문을 냈습니다.\n공시 점검에서는 유상증자가 걸렸지만 기록만 했습니다."
+)
+
+
+def llm_env(*, summary=SUMMARY, screen=VETO, source=None, **kw):
+    """요약용 LLM과 판정용 LLM을 따로 둬서 어느 쪽이 불렸는지 본다."""
+    summary_llm, screen_llm = FakeLLM(summary), FakeLLM(screen)
+    source = source or OneSource()
+    env = make_env(llm=summary_llm, screener=BuyScreener(screen_llm, {KR: source}), **kw)
+    return env, summary_llm, screen_llm, source
+
+
+def test_shadow_veto_is_recorded_but_order_still_goes_out():
+    env, _, screen_llm, source = llm_env()
+    env.a.signals = {"005930": Side.BUY}
+    report = env.run()
+
+    # 섀도 모드: 판정이 VETO여도 주문은 그대로 나간다
+    [result] = report.orders
+    assert (result.order.symbol, result.order.side) == ("005930", Side.BUY)
+    assert len(env.broker_orders()) == 1
+    [screen] = report.screens
+    assert (screen.symbol, screen.strategy, screen.verdict) == ("005930", "a", Verdict.VETO)
+    assert source.asked == ["005930"] and len(screen_llm.calls) == 1
+    assert "악재 판정(기록만, 주문에 반영 안 함): 거부했을 것 1" in env.message
+    assert " · 삼성전자(005930): 유상증자 결정 공시" in env.message
+    assert report.warnings == [] and not env.notification.urgent
+    # 실행 기록(runs.report)에도 남는다
+    assert env.store.runs[-1].screens == [screen]
+
+
+def test_summary_goes_first_in_notification_and_record():
+    env, summary_llm, _, _ = llm_env()
+    env.a.signals = {"005930": Side.BUY}
+    report = env.run()
+
+    assert report.ai_summary == SUMMARY
+    assert env.message.split("\n")[1] == f"요약(AI): {SUMMARY.splitlines()[0]}"
+    assert f"요약(AI): {SUMMARY}" in env.store.summaries[-1]
+    # 요약 입력은 결과 문장이고, 그 안에 악재 판정도 들어 있다
+    [call] = summary_llm.calls
+    assert "매수 삼성전자(005930) 17주" in call.prompt and "악재 판정" in call.prompt
+
+
+def test_llm_failures_never_block_orders_or_make_alerts_urgent():
+    source = OneSource(error=RuntimeError("공시 서버 오류"))
+    env, _, _, _ = llm_env(summary=LLMError("timeout"), source=source)
+    env.a.signals = {"005930": Side.BUY}
+    report = env.run()
+
+    assert report.status is RunStatus.OK
+    assert len(report.orders) == 1
+    assert report.screens[0].verdict is Verdict.UNKNOWN
+    assert report.ai_summary is None
+    assert "요약(AI)" not in env.message
+    assert report.warnings == [] and not env.notification.urgent
+
+
+def test_screener_crash_is_contained():
+    class Broken(BuyScreener):
+        def screen(self, *a, **kw):
+            raise RuntimeError("bug")
+
+    env = make_env(screener=Broken(FakeLLM(), {}))
+    env.a.signals = {"005930": Side.BUY}
+    report = env.run()
+    assert report.status is RunStatus.OK and len(report.orders) == 1
+    assert report.screens == []
+
+
+def test_no_llm_calls_on_quiet_days_sells_or_pause():
+    env, summary_llm, screen_llm, _ = llm_env()
+    env.run()  # 신호 없음
+    hold(env, "005930")
+    env.a.signals = {"005930": Side.SELL}
+    env.next_day()
+    report = env.run()  # 매도만: 판정 안 함, 요약은 함
+    assert report.screens == [] and screen_llm.calls == []
+    assert len(summary_llm.calls) == 1
+
+    env.store.set_pause(True, "휴가")
+    env.a.signals = {"000660": Side.BUY}
+    env.next_day()
+    env.run()  # 일시정지 중 매수 신호는 주문 대상이 아니라 판정하지 않는다
+    assert screen_llm.calls == []
+
+
+def test_stop_loss_check_does_not_screen():
+    env, _, screen_llm, source = llm_env(stop_loss_only=True)
+    env.clock.now = MON_1317
+    env.a.signals = {"005930": Side.BUY}
+    env.run()
+    assert source.asked == [] and screen_llm.calls == []

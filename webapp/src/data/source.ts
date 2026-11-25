@@ -1,12 +1,17 @@
 // 화면이 쓰는 데이터 창구. 운영은 Supabase(supabase.ts), 화면 확인용은 데모 데이터(demo.ts).
-// 웹앱은 기록을 읽기만 하고, 바꾸는 것은 일시정지 스위치와 이 기기의 푸시 구독뿐이다(RLS도 그렇게 막는다).
+// 웹앱은 기록을 읽기만 하고, 바꾸는 것은 일시정지 스위치, 엔진 설정(LLM 기능과 그 키), 이 기기의 푸시 구독뿐이다
+// (RLS와 함수 권한도 그렇게 막는다). 키는 넣기만 하고 다시 읽지 못한다.
 import type {
+  EngineSettings,
+  EngineSettingsInput,
   EquityRow,
   Market,
   Mode,
   OrderRow,
   PositionRow,
   RunRow,
+  SecretName,
+  SecretStatus,
   Snapshot,
   SwitchState,
 } from "../lib/types";
@@ -50,6 +55,14 @@ export interface DataSource {
   listOrders(mode: Mode, opts: { limit: number; before?: string }): Promise<OrderRow[]>;
   /** 체결된 주문 전부(성적표, 산 이유) */
   filledOrders(mode: Mode): Promise<OrderRow[]>;
+
+  /** 엔진 설정(LLM 기능). null이면 표가 없다(schema.sql을 다시 실행하기 전) */
+  getEngineSettings(): Promise<EngineSettings | null>;
+  saveEngineSettings(settings: EngineSettingsInput): Promise<EngineSettings>;
+  /** 넣어 둔 비밀값의 끝 4자리와 시각. 값 자체는 돌려주지 않는다 */
+  secretStatus(): Promise<SecretStatus[]>;
+  /** 비밀값 넣기. 빈 문자열이면 지운다 */
+  setSecret(name: SecretName, value: string): Promise<void>;
 
   savePushSubscription(keys: PushKeys): Promise<void>;
   deletePushSubscription(endpoint: string): Promise<void>;

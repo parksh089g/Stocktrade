@@ -17,12 +17,13 @@ import httpx
 from trading.core.clock import trading_date
 from trading.core.models import Market, OrderResult, Position
 from trading.engine.report import RunReport
-from trading.storage.base import PauseState, PushSubscription, Store, StoreError
+from trading.storage.base import EngineConfig, PauseState, PushSubscription, Store, StoreError
 
 logger = logging.getLogger(__name__)
 
 _OPEN_STATUSES = "in.(SUBMITTED,PARTIALLY_FILLED)"
 _UPSERT = "resolution=merge-duplicates,return=minimal"
+_META = {"id", "updated_at"}
 
 
 class SupabaseStore(Store):
@@ -194,6 +195,16 @@ class SupabaseStore(Store):
     def delete_cache(self, name: str) -> None:
         self._request(
             "DELETE", "engine_cache", params={"name": f"eq.{name}"}, prefer="return=minimal"
+        )
+
+    # ---- 웹앱에서 넣은 엔진 설정과 비밀값 ----
+
+    def get_engine_config(self) -> EngineConfig:
+        rows = self._request("GET", "engine_settings", params={"select": "*", "id": "eq.1"})
+        settings = {k: v for k, v in (rows[0] if rows else {}).items() if k not in _META}
+        secrets = self._request("POST", "rpc/get_engine_secrets", body={}) or []
+        return EngineConfig(
+            settings=settings, secrets={str(r["name"]): str(r["value"]) for r in secrets}
         )
 
     # ---- 연결 확인 도구용 ----

@@ -4,6 +4,7 @@ import { formatPrice, kstDateKey, localDateKey, symbolName } from "../lib/format
 import type {
   Balance,
   Benchmark,
+  EngineSettings,
   Market,
   Mode,
   Num,
@@ -14,6 +15,8 @@ import type {
   ReportOrderResult,
   RunReport,
   RunRow,
+  SecretName,
+  SecretStatus,
   Side,
   Signal,
   SkippedSignal,
@@ -350,6 +353,17 @@ function build(now: Date) {
 export function createDemoSource(now: Date = new Date()): DataSource {
   const { orders, positions, runs } = build(now);
   let switchState: SwitchState = { paused: false, reason: "", updated_at: at(now, 9, "07:58") };
+  let engineSettings: EngineSettings = {
+    llm_provider: "anthropic",
+    llm_model: "",
+    llm_summary: true,
+    llm_screen: "shadow",
+    sec_user_agent: "",
+    updated_at: at(now, 9, "07:50"),
+  };
+  const secrets = new Map<SecretName, SecretStatus>([
+    ["llm_api_key", { name: "llm_api_key", hint: "x7Qa", updated_at: at(now, 9, "07:49") }],
+  ]);
   const wait = <T>(value: T) => new Promise<T>((resolve) => setTimeout(() => resolve(value), 120));
   const byMode = <T extends { mode: Mode }>(rows: T[], mode: Mode) => rows.filter((r) => r.mode === mode);
   const withoutReport = (r: RunRow): RunRow => ({ ...r, report: undefined });
@@ -365,6 +379,19 @@ export function createDemoSource(now: Date = new Date()): DataSource {
     setPause: (paused, reason) => {
       switchState = { paused, reason, updated_at: new Date().toISOString() };
       return wait(switchState);
+    },
+
+    getEngineSettings: () => wait(engineSettings),
+    saveEngineSettings: (input) => {
+      engineSettings = { ...input, updated_at: new Date().toISOString() };
+      return wait(engineSettings);
+    },
+    secretStatus: () => wait([...secrets.values()]),
+    setSecret: (name, value) => {
+      // 데모는 끝 4자리만 기억한다
+      if (value) secrets.set(name, { name, hint: value.slice(-4), updated_at: new Date().toISOString() });
+      else secrets.delete(name);
+      return wait(undefined);
     },
 
     latestMode: () => wait(MODE),

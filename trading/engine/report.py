@@ -1,6 +1,6 @@
 """하루 실행 결과. 저장소에 기록하고 알림으로 보낸다."""
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import date
 from decimal import Decimal
 from enum import StrEnum
@@ -19,6 +19,7 @@ from trading.core.models import (
     SkippedSignal,
     UtcDatetime,
 )
+from trading.llm.models import ScreenResult, Verdict
 
 
 class RunStatus(StrEnum):
@@ -68,6 +69,9 @@ class RunReport(BaseModel):
     # 이번 실행에서 쓴 종목 가격. 매매 실행은 전날 종가, 손절 확인은 지금 가격
     prices: dict[str, Decimal] = Field(default_factory=dict)
     benchmark: BenchmarkClose | None = None  # 비교 지수 종가(매매 실행만, 못 받으면 없음)
+    # LLM 보조 기능(trading/llm). 둘 다 주문에는 영향을 주지 않는다.
+    ai_summary: str | None = None  # 알림 맨 앞에 붙인 요약 문장
+    screens: list[ScreenResult] = Field(default_factory=list)  # 매수 신호 악재 판정(섀도 모드)
 
 
 _MODE = {"paper": "모의투자", "live": "실전"}
@@ -107,6 +111,8 @@ def report_body(report: RunReport, names: Mapping[str, str] | None = None) -> st
         return f"{name}({symbol})" if name else symbol
 
     lines = []
+    if report.ai_summary:
+        lines += [f"요약(AI): {report.ai_summary}", ""]
     if report.message:
         lines.append(report.message)
     if report.error:
@@ -147,6 +153,9 @@ def report_body(report: RunReport, names: Mapping[str, str] | None = None) -> st
             sig = s.signal
             lines.append(f" · {_SIDE[sig.side]} {label(sig.symbol)} [{sig.strategy}]: {s.reason}")
 
+    if report.screens:
+        lines.extend(_screen_lines(report.screens, label))
+
     if report.warnings:
         lines.append("확인 필요")
         lines.extend(f" · {w}" for w in report.warnings)
@@ -156,6 +165,22 @@ def report_body(report: RunReport, names: Mapping[str, str] | None = None) -> st
             "손절할 종목이 없습니다." if report.stop_loss_only else "오늘은 신호가 없습니다."
         )
     return "\n".join(lines)
+
+
+def _screen_lines(screens: list[ScreenResult], label: Callable[[str], str]) -> list[str]:
+    """악재 판정 요약. 거부했을 매수만 하나씩 보여 주고 나머지는 개수만."""
+    symbols = {(s.symbol, s.verdict) for s in screens}
+    count = {v: len({sym for sym, verdict in symbols if verdict is v}) for v in Verdict}
+    lines = [
+        f"악재 판정(기록만, 주문에 반영 안 함): 거부했을 것 {count[Verdict.VETO]} · "
+        f"통과 {count[Verdict.OK]} · 판정 못 함 {count[Verdict.UNKNOWN]}"
+    ]
+    seen = set()
+    for s in screens:
+        if s.verdict is Verdict.VETO and s.symbol not in seen:
+            seen.add(s.symbol)
+            lines.append(f" · {label(s.symbol)}: {s.reason}")
+    return lines
 
 
 def format_report(report: RunReport, names: Mapping[str, str] | None = None) -> str:

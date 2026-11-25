@@ -16,7 +16,15 @@ import sys
 from trading.config import Settings
 from trading.core.log import setup_logging
 from trading.core.models import Market
-from trading.engine.factory import SetupError, build_broker, build_notifier, build_store
+from trading.engine.factory import (
+    SetupError,
+    build_broker,
+    build_llm,
+    build_notifier,
+    build_screener,
+    build_store,
+    with_store_config,
+)
 from trading.engine.report import RunStatus
 from trading.engine.runner import Engine
 from trading.strategies import STRATEGIES, create_strategy
@@ -49,6 +57,9 @@ def main(argv: list[str] | None = None) -> int:
 
     settings = Settings()
     setup_logging(settings.secret_values())
+    # 웹앱 설정 화면에서 넣은 LLM 설정과 키(GitHub에 없는 것만). 키도 로그에서 가린다.
+    settings = with_store_config(settings)
+    setup_logging(settings.secret_values())
     market = Market(args.market)
 
     if args.ignore_hours and settings.broker != "fake" and not args.dry_run:
@@ -59,6 +70,8 @@ def main(argv: list[str] | None = None) -> int:
         broker = build_broker(settings, universe, market, seed=args.seed)
         store = build_store(settings, dry_run=args.dry_run)
         notifier = build_notifier(settings, store)
+        llm = build_llm(settings)
+        screener = build_screener(settings, llm)
     except SetupError as e:
         print(f"설정 오류: {e}")
         return 2
@@ -80,6 +93,8 @@ def main(argv: list[str] | None = None) -> int:
         stop_loss_only=args.stop_loss_only,
         once_per_day=args.once_per_day,
         benchmarks=BENCHMARKS,
+        llm=llm if settings.llm_summary else None,
+        screener=screener,
     )
     report = engine.run(market)
     # 오류나 알림 실패는 종료 코드로도 알린다(GitHub Actions 실패 표시)

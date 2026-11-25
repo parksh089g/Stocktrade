@@ -44,6 +44,13 @@ jobs:
       VAPID_SUBJECT: ${{ secrets.VAPID_SUBJECT }}
       MAX_DAILY_BUY_KRW: ${{ vars.MAX_DAILY_BUY_KRW }}
       MAX_DAILY_BUY_USD: ${{ vars.MAX_DAILY_BUY_USD }}
+      # LLM 보조 기능(실행 요약, 매수 후보 악재 판정 섀도 모드). 변수가 없으면 쓰지 않는다. 설정은 docs/SETUP.md 7장.
+      LLM_PROVIDER: ${{ vars.LLM_PROVIDER }}
+      LLM_MODEL: ${{ vars.LLM_MODEL }}
+      LLM_SCREEN: ${{ vars.LLM_SCREEN }}
+      LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+      DART_API_KEY: ${{ secrets.DART_API_KEY }}
+      SEC_USER_AGENT: ${{ vars.SEC_USER_AGENT }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -62,6 +69,7 @@ jobs:
           echo "예약 실행 SCHEDULE_ENABLED=${SCHEDULE_ENABLED:-(없음)}"
           echo "모드 변수 TRADING_MODE=${MODE_VARIABLE:-(없음, 모의투자)}"
           echo "하루 매수 한도 KRW=${MAX_DAILY_BUY_KRW:-(기본값)} USD=${MAX_DAILY_BUY_USD:-(기본값)}"
+          echo "LLM ${LLM_PROVIDER:-(없음)} ${LLM_MODEL:-} 악재 판정 ${LLM_SCREEN:-off}"
 
       - name: 실행 (모의투자)
         if: vars.TRADING_MODE != 'live'

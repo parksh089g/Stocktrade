@@ -56,10 +56,21 @@ uv run python -m trading.engine --market KR --ignore-hours --dry-run --stop-loss
 
 ## 기록과 알림
 
-- 기록: Supabase(`supabase/schema.sql`). 모의투자/실전 기록은 따로 저장된다. 연결 확인 `uv run python -m trading.storage.check`
+- 기록: Supabase(`supabase/schema.sql`, 바뀌면 main 머지 때 `db-schema` 워크플로가 적용). 모의투자/실전 기록은 따로 저장된다. 연결 확인 `uv run python -m trading.storage.check`
 - 알림: 웹앱 푸시. 키 만들기 `uv run python -m trading.notify.vapid`, 폰으로 시험 알림 `uv run python -m trading.notify.check`.
   알림을 한 기기에도 못 보내면 실행이 실패로 끝나 GitHub Actions 실패 메일이 백업 알림이 된다.
 - fake 증권사로 실행할 때는 가짜 주문이 실제 기록에 섞이지 않도록 메모리 저장소와 화면 출력만 쓴다.
+
+## LLM 보조 기능(선택)
+
+`trading/llm/`(Anthropic Claude, 공식 SDK). LLM은 주문을 내거나 리스크 규칙을 바꾸지 않는다. 키와 설정은 웹앱
+**설정 > AI 기능**에서 넣는다(키는 Supabase Vault에 암호화). 자세한 것은 [docs/SETUP.md](docs/SETUP.md) 7장.
+- 실행 요약: 주문·체결·주문 안 함이 있던 실행의 결과를 2~3줄로 풀어 알림 맨 앞에 붙인다. 결과에 없는 가격이나
+  수량을 쓰면 요약을 버린다.
+- 매수 후보 악재 판정(섀도 모드): 매수 신호 종목의 최근 2주 공시(국내 DART, 미국 SEC EDGAR)를 보고 유상증자,
+  거래정지, 감사의견 거절 같은 악재가 있는지 판정해 기록만 한다. 주문은 판정과 상관없이 그대로 나간다.
+  Supabase 보기 `llm_screens`로 모아 보고, 몇 주 뒤 효과를 확인해 반영할지 정한다. 매도와 손절은 판정하지 않는다.
+- LLM이나 공시 조회가 실패하면 LLM이 없는 것처럼 지나간다(경고나 긴급 알림을 만들지 않는다).
 
 ## 웹앱(폰)
 

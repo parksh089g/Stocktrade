@@ -12,6 +12,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 TradingMode = Literal["paper", "live"]
 BrokerName = Literal["fake", "kis"]
+# 매수 후보 악재 판정: off(안 함), shadow(판정을 기록만 하고 주문에는 반영하지 않음)
+LlmScreenMode = Literal["off", "shadow"]
 
 
 class Settings(BaseSettings):
@@ -38,6 +40,17 @@ class Settings(BaseSettings):
     max_daily_buy_krw: Decimal | None = Field(default=None, gt=0)
     max_daily_buy_usd: Decimal | None = Field(default=None, gt=0)
 
+    # LLM 보조 기능(trading/llm). 주문과 리스크 규칙에는 손대지 않는다.
+    # LLM 회사: none(쓰지 않음) | anthropic. 모르는 값이면 LLM 기능만 끄고 매매는 그대로 돈다.
+    llm_provider: str = "none"
+    llm_api_key: SecretStr | None = None
+    llm_model: str | None = None  # 비우면 어댑터 기본값(anthropic: claude-opus-5-5)
+    llm_summary: bool = True  # LLM이 있으면 실행 요약을 알림 맨 앞에 붙인다
+    llm_screen: LlmScreenMode = "off"
+    # 악재 판정용 공시 출처. 국내 OpenDART API 키, 미국 SEC EDGAR User-Agent("이름 연락처 이메일")
+    dart_api_key: SecretStr | None = None
+    sec_user_agent: str | None = None
+
     # GitHub Actions가 자동으로 GITHUB_ACTIONS=true를 넣어 준다
     github_actions: bool = Field(default=False)
 
@@ -62,5 +75,7 @@ class Settings(BaseSettings):
             self.kis_account_no,
             self.supabase_service_key,
             self.vapid_private_key,
+            self.llm_api_key,
+            self.dart_api_key,
         ]
         return [s.get_secret_value() for s in secrets if s and s.get_secret_value()]

@@ -31,6 +31,24 @@
 
    마지막 줄에 `Supabase 연결 확인 완료`가 나오면 된다.
 
+### 1-1. 표 구조 자동 적용 (GitHub Actions)
+
+`supabase/schema.sql`이 바뀐 코드가 main에 올라오면(PR 머지) `db-schema` 워크플로가 Supabase에 바로 적용한다.
+배포할 때마다 할 일은 없고, 아래 Secret을 한 번만 넣으면 된다. 넣기 전에는 워크플로가 경고만 남기고 넘어가니
+그동안은 위 2번처럼 SQL Editor에서 직접 실행한다.
+
+1. Supabase 프로젝트 화면 위쪽 **Connect** → **Session pooler**의 연결 문자열을 복사한다
+   (`postgresql://postgres.xxxx:[YOUR-PASSWORD]@aws-…pooler.supabase.com:5432/postgres`).
+   GitHub 러너는 IPv4만 써서 Direct connection은 안 된다.
+2. `[YOUR-PASSWORD]`를 프로젝트를 만들 때 적어 둔 Database password로 바꾼다. 잊었으면 Project Settings >
+   Database > Reset database password로 새로 만든다(엔진과 웹앱은 이 비밀번호를 쓰지 않아 영향이 없다).
+3. GitHub 저장소 **Settings > Secrets and variables > Actions > Secrets**에 `SUPABASE_DB_URL` 이름으로 넣는다.
+4. **Actions > db-schema > Run workflow**(main)로 한 번 돌려 초록색이 되는지 본다.
+
+- 저장소가 공개여도 이 Secret은 보이지 않는다. 워크플로는 main에 올라온 코드로만 돌고(PR이나 포크에서는 돌지
+  않는다), 접속 주소를 로그에 찍지 않는다(GitHub이 Secret 값을 `***`로 가린다).
+- 한 트랜잭션으로 돌려서 중간에 오류가 나면 아무것도 바뀌지 않고 실행이 빨간색이 된다.
+
 참고: 무료 프로젝트는 일주일 동안 아무 요청이 없으면 일시 중지된다. 4장의 매일 자동 실행이 돌기 시작하면 걱정하지 않아도 된다.
 그 전에 멈췄다면 대시보드에서 다시 켜면 된다.
 
@@ -326,3 +344,63 @@ npm test       # 계산(비중, 성적, 시간 표기) 시험
 - **성적**: 계좌와 지수(KODEX 200, SPY)를 같은 날 100으로 맞춘 수익 곡선, 전략별 성적표.
   잔고와 지수 기록은 2026-11-10부터 쌓인다.
 - **설정**: 일시정지(주문만 멈춤, 손절 매도는 계속), 이 기기 알림, 모의투자/실전 기록 보기.
+
+## 7. LLM 보조 기능 (선택)
+
+실행 요약과 매수 후보 악재 판정(섀도 모드)을 켠다. 둘 다 주문과 리스크 규칙에는 손대지 않고, 실패하면
+LLM이 없는 것처럼 지나간다. 변수가 없으면 지금처럼 돈다.
+
+### 7-1. 웹앱 설정 화면에서 넣기 (권장)
+
+1. `supabase/schema.sql`을 적용한다(설정 표 `engine_settings`, Vault 함수, 보기 `llm_screens`가 생긴다).
+   1-1의 Secret을 넣었으면 머지할 때 자동으로, 아니면 SQL Editor에서 한 번 더 실행한다.
+2. 웹앱 **설정 > AI 기능**에서
+   - **Anthropic API 키**: [Claude Console](https://platform.claude.com) > API Keys에서 만든 키(`sk-ant-...`)
+   - (악재 판정, 국내) **OpenDART 인증키**: [OpenDART](https://opendart.fss.or.kr) 가입 후 신청(무료, 40자리)
+   - **AI 사용**을 Claude로, 필요하면 **악재 판정**을 '기록만'으로, 미국 공시를 보려면 **SEC 연락처**
+     (`stocktrade 본인메일주소`, SEC가 요청마다 연락처를 요구한다)를 넣고 **설정 저장**.
+3. 다음 실행부터 쓴다.
+
+- 키는 Supabase Vault에 암호화해 저장된다. 웹앱은 넣기와 지우기만 하고 다시 읽지 못한다(끝 4자리와 시각만 보인다).
+  꺼내는 함수는 엔진의 secret 키로만 부를 수 있다.
+- 모델은 비우면 `claude-opus-5-5`. 비용을 줄이려면 `claude-haiku-5-5`.
+- 비용(대략): 실행마다 요약 1번 + 매수 신호 종목 수만큼 판정이라 하루 몇 번이다. `claude-opus-5-5`로 한 달
+  몇 달러, `claude-haiku-5-5`로 몇십 센트 수준이다. Console의 Usage 화면에서 실제 사용량을 본다.
+- 판정은 주문 앞에서 돌기 때문에 2분을 넘기면 남은 종목은 '판정 못 함'으로 두고 주문으로 넘어간다.
+- 키가 없거나 설정이 틀려도 매매는 멈추지 않고 LLM 기능만 꺼진다(Actions 로그에 이유가 남는다).
+
+### 7-1b. GitHub에 넣기 (대신 쓸 수 있음)
+
+GitHub에 값이 있으면 웹앱 값보다 먼저 쓴다. 4-1, 4-2와 같은 화면에서 넣는다.
+
+| 종류 | 이름 | 값 |
+|---|---|---|
+| Secret | `LLM_API_KEY` | Anthropic API 키 |
+| Variable | `LLM_PROVIDER` | `anthropic` |
+| Variable | `LLM_MODEL` | (선택) 모델 이름 |
+| Variable | `LLM_SCREEN` | `shadow`(악재 판정 기록) 또는 넣지 않음 |
+| Secret | `DART_API_KEY` | OpenDART 인증키 |
+| Variable | `SEC_USER_AGENT` | `stocktrade 본인메일주소` |
+
+저장소가 공개라서 Actions 로그는 누구나 볼 수 있다. Secrets는 로그에서 가려지지만 Variables에는 비밀값을 넣지 않는다.
+
+### 7-2. 확인
+
+1. 4-3처럼 손으로 시험 실행(dry_run)을 돌린다. 웹앱에서 넣었다면 **실행** 단계 로그에 `웹앱에서 넣은 설정을
+   씁니다: llm_api_key, llm_provider, …`가 나온다(GitHub에 넣었다면 **설정 표시** 단계에 보인다).
+   매수 신호가 있던 날이면 알림 맨 앞에 `요약(AI):` 줄과 `악재 판정(기록만, …)` 줄이 붙는다.
+
+### 7-3. 섀도 모드 결과 보기
+
+```sql
+select started_at, market, symbol, strategy, verdict, reason
+from llm_screens where mode = 'paper' order by started_at desc;
+```
+
+4~8주 모은 뒤 `VETO`(거부했을 것) 종목과 나머지의 이후 수익(주문 기록과 실행 기록의 가격)을 비교한다.
+거부했을 종목이 뚜렷하게 나빴을 때만 판정을 주문에 반영하는 단계를 따로 만든다. 그 전까지는 기록만 한다.
+
+### 7-4. 끄기
+
+웹앱 **설정 > AI 기능**에서 끈다(GitHub에 넣었다면 `LLM_SCREEN`을 지우면 판정을, `LLM_PROVIDER`를 지우면
+LLM 기능 전체를 끈다).

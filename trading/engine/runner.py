@@ -3,6 +3,12 @@
 스위치 확인 → 체결 동기화 → (휴장/장 마감이면 여기서 끝) → 계좌 조회 → 시세 → 신호
 → 리스크 → 주문(주문마다 스위치 재확인) → 기록 → 알림
 
+LLM 보조 기능(trading/llm, 설정했을 때만)
+- 악재 판정(섀도 모드): 신호 다음에 매수 신호 종목의 최근 공시를 LLM이 보고 판정을 기록한다.
+  주문은 판정과 상관없이 그대로 나간다. 매도와 손절, 손절 확인 실행에서는 하지 않는다.
+- 실행 요약: 기록과 알림 직전에 결과를 2~3줄로 풀어 알림 맨 앞에 붙인다.
+- 둘 다 실패하면 LLM이 없는 것처럼 지나간다(경고로 알림을 '긴급'으로 만들지 않고 로그만 남긴다).
+
 일시정지 중에는 손절 매도만 주문하고 나머지 신호는 '주문 안 함'으로 알린다.
 
 손절 확인 실행(stop_loss_only)은 장 마감 전에 한 번 더 돌아 보유 종목의 손절만 본다.
@@ -54,6 +60,10 @@ from trading.engine.report import (
     report_title,
 )
 from trading.engine.sync import record_new_order, sync_open_orders
+from trading.llm.base import LLMClient
+from trading.llm.models import ScreenResult
+from trading.llm.screen import BuyScreener
+from trading.llm.summary import summarize, wants_summary
 from trading.notify.base import Notification, Notifier
 from trading.risk.config import RiskConfig
 from trading.risk.planner import PlannedOrder, plan_orders
@@ -108,6 +118,8 @@ class Engine:
         index_symbols: Mapping[Market, str] | None = None,
         benchmarks: Mapping[Market, Instrument] | None = None,
         clock: Callable[[], datetime] = now_utc,
+        llm: LLMClient | None = None,
+        screener: BuyScreener | None = None,
     ) -> None:
         if not strategies:
             raise ValueError("전략이 하나 이상 필요합니다")
@@ -129,6 +141,9 @@ class Engine:
         # 계좌 성적을 견줄 지수 ETF. 매매 실행마다 종가를 기록만 하고 전략에는 넘기지 않는다.
         self.benchmarks = dict(benchmarks or {})
         self.clock = clock
+        # 실행 요약을 쓸 LLM과 매수 후보 악재 판정(섀도 모드). 없으면 쓰지 않는다.
+        self.llm = llm
+        self.screener = screener
 
     def run(self, market: Market) -> RunReport:
         report = RunReport(
@@ -157,6 +172,7 @@ class Engine:
         report.finished_at = self.clock()
 
         names = self._names(market)
+        self._summarize(report, names)
         run_id = None
         try:
             run_id = self.store.save_run(report, self._clean(format_report(report, names)))
@@ -233,6 +249,9 @@ class Engine:
                 SkippedSignal(signal=s, reason=PAUSED_SKIP) for s in signals if not s.stop_loss
             ]
             signals = [s for s in signals if s.stop_loss]
+        if not self.stop_loss_only:
+            # 섀도 모드: 판정을 기록만 하고 signals는 그대로 둔다
+            report.screens = self._screen(market, signals, today)
 
         ordered_today, bought_today = self._orders_today(market, today)
         plan = plan_orders(
@@ -391,6 +410,31 @@ class Engine:
                 raise OrderRecordError(p.order, e) from e
             report.fills += recorded.fills
             report.warnings += recorded.warnings
+
+    # ---- LLM 보조 기능 ----
+
+    def _screen(self, market: Market, signals: list[Signal], today: date) -> list[ScreenResult]:
+        if self.screener is None or not any(
+            s.side is Side.BUY and not s.stop_loss for s in signals
+        ):
+            return []
+        instruments = {i.symbol: i for i in self.universe.get(market, [])}
+        try:
+            return self.screener.screen(signals, instruments, today)
+        except Exception:
+            logger.exception("악재 판정 실패(주문에는 영향 없음)")
+            return []
+
+    def _summarize(self, report: RunReport, names: dict[str, str]) -> None:
+        if self.llm is None or not wants_summary(report):
+            return
+        try:
+            body = self._clean(report_body(report, names))
+            text = summarize(self.llm, report_title(report), body)
+        except Exception:
+            logger.exception("실행 요약 실패")
+            return
+        report.ai_summary = self._clean(text) if text else None
 
     # ---- 도움 함수 ----
 

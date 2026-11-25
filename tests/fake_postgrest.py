@@ -4,6 +4,7 @@
 - missing_columns에 넣은 칸은 표에 없는 것처럼 400으로 답한다(schema.sql을 다시 실행하기 전)
 - POST: on_conflict + Prefer resolution=merge-duplicates면 upsert, 아니면 insert(runs는 id 부여)
 - Prefer return=representation이면 넣은 행을 돌려준다
+- rpc/get_engine_secrets는 vault의 값을 돌려준다
 - numeric 컬럼은 진짜처럼 JSON 숫자로 돌려준다
 """
 
@@ -29,7 +30,10 @@ class FakePostgrest:
             "runs": [],
             "push_subscriptions": [],
             "engine_cache": [],
+            "engine_settings": [],
         }
+        # Vault 비밀값(rpc/get_engine_secrets가 돌려준다): 이름 → 값
+        self.vault: dict[str, str] = {}
         self.requests: list[httpx.Request] = []
         # 앞에서부터 하나씩 꺼내 쓴다: 숫자면 그 상태 코드로 응답, 예외면 던진다
         self.fail_next: list[int | Exception] = []
@@ -52,6 +56,9 @@ class FakePostgrest:
             return httpx.Response(401, text='{"message":"bad key"}')
 
         table = request.url.path.removeprefix("/rest/v1/")
+        if table == "rpc/get_engine_secrets":
+            rows = [{"name": k, "value": v} for k, v in self.vault.items()]
+            return httpx.Response(200, text=json.dumps(rows))
         rows = self.tables[table]
         params = dict(request.url.params.multi_items())
         select = params.pop("select", None)

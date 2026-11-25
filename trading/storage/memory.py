@@ -5,7 +5,7 @@ from datetime import date
 from trading.core.clock import now_utc, trading_date
 from trading.core.models import Market, OrderResult, Position
 from trading.engine.report import RunReport
-from trading.storage.base import PauseState, PushSubscription, Store, StoreError
+from trading.storage.base import EngineConfig, PauseState, PushSubscription, Store, StoreError
 
 
 class MemoryStore(Store):
@@ -17,6 +17,7 @@ class MemoryStore(Store):
         self.summaries: list[str] = []
         self.subscriptions: dict[str, PushSubscription] = {}
         self.cache: dict[str, str] = {}
+        self.engine_config = EngineConfig()
         # 메서드 이름을 넣으면 그 메서드가 StoreError를 던진다 (오류 상황 테스트용)
         self.fail_on: set[str] = set()
 
@@ -93,3 +94,7 @@ class MemoryStore(Store):
     def delete_cache(self, name: str) -> None:
         self._maybe_fail("delete_cache")
         self.cache.pop(name, None)
+
+    def get_engine_config(self) -> EngineConfig:
+        self._maybe_fail("get_engine_config")
+        return self.engine_config
