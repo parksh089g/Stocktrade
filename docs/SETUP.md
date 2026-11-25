@@ -31,6 +31,24 @@
 
    마지막 줄에 `Supabase 연결 확인 완료`가 나오면 된다.
 
+### 1-1. 표 구조 자동 적용 (GitHub Actions)
+
+`supabase/schema.sql`이 바뀐 코드가 main에 올라오면(PR 머지) `db-schema` 워크플로가 Supabase에 바로 적용한다.
+배포할 때마다 할 일은 없고, 아래 Secret을 한 번만 넣으면 된다. 넣기 전에는 워크플로가 경고만 남기고 넘어가니
+그동안은 위 2번처럼 SQL Editor에서 직접 실행한다.
+
+1. Supabase 프로젝트 화면 위쪽 **Connect** → **Session pooler**의 연결 문자열을 복사한다
+   (`postgresql://postgres.xxxx:[YOUR-PASSWORD]@aws-…pooler.supabase.com:5432/postgres`).
+   GitHub 러너는 IPv4만 써서 Direct connection은 안 된다.
+2. `[YOUR-PASSWORD]`를 프로젝트를 만들 때 적어 둔 Database password로 바꾼다. 잊었으면 Project Settings >
+   Database > Reset database password로 새로 만든다(엔진과 웹앱은 이 비밀번호를 쓰지 않아 영향이 없다).
+3. GitHub 저장소 **Settings > Secrets and variables > Actions > Secrets**에 `SUPABASE_DB_URL` 이름으로 넣는다.
+4. **Actions > db-schema > Run workflow**(main)로 한 번 돌려 초록색이 되는지 본다.
+
+- 저장소가 공개여도 이 Secret은 보이지 않는다. 워크플로는 main에 올라온 코드로만 돌고(PR이나 포크에서는 돌지
+  않는다), 접속 주소를 로그에 찍지 않는다(GitHub이 Secret 값을 `***`로 가린다).
+- 한 트랜잭션으로 돌려서 중간에 오류가 나면 아무것도 바뀌지 않고 실행이 빨간색이 된다.
+
 참고: 무료 프로젝트는 일주일 동안 아무 요청이 없으면 일시 중지된다. 4장의 매일 자동 실행이 돌기 시작하면 걱정하지 않아도 된다.
 그 전에 멈췄다면 대시보드에서 다시 켜면 된다.
 
@@ -334,8 +352,8 @@ LLM이 없는 것처럼 지나간다. 변수가 없으면 지금처럼 돈다.
 
 ### 7-1. 웹앱 설정 화면에서 넣기 (권장)
 
-1. Supabase SQL Editor에서 `supabase/schema.sql`을 한 번 더 실행한다(설정 표 `engine_settings`, Vault 함수,
-   보기 `llm_screens`가 생긴다).
+1. `supabase/schema.sql`을 적용한다(설정 표 `engine_settings`, Vault 함수, 보기 `llm_screens`가 생긴다).
+   1-1의 Secret을 넣었으면 머지할 때 자동으로, 아니면 SQL Editor에서 한 번 더 실행한다.
 2. 웹앱 **설정 > AI 기능**에서
    - **Anthropic API 키**: [Claude Console](https://platform.claude.com) > API Keys에서 만든 키(`sk-ant-...`)
    - (악재 판정, 국내) **OpenDART 인증키**: [OpenDART](https://opendart.fss.or.kr) 가입 후 신청(무료, 40자리)

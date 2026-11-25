@@ -183,3 +183,29 @@ def test_workflows_are_read_only_and_pin_actions():
         assert "write" not in re.sub(r"#.*", "", text), path.name
         for action in re.findall(r"uses: ([\w./-]+@\S+)", text):
             assert re.fullmatch(r"[\w-]+/[\w-]+@[0-9a-f]{40}", action), action
+
+
+# ---- 표 구조 자동 적용(db-schema.yml) ----
+
+
+def test_db_schema_runs_only_on_main_of_this_repo():
+    text = read("db-schema.yml")
+    trigger = text.split("\non:\n", 1)[1].split("\npermissions:", 1)[0]
+    # PR(포크 포함)에서는 돌지 않는다: 데이터베이스 비밀번호가 든 Secret을 쓰기 때문
+    assert "pull_request" not in trigger
+    assert "    branches: [main]\n    paths: [supabase/schema.sql]\n" in trigger
+    assert "workflow_dispatch" in trigger
+    assert (
+        "if: github.repository == 'parksh089g/Stocktrade' && github.ref == 'refs/heads/main'\n"
+        in text
+    )
+    # 접속 주소는 환경변수로만 넘기고 명령줄이나 echo로 찍지 않는다
+    assert text.count("secrets.SUPABASE_DB_URL") == 1
+    assert 'psql "$SUPABASE_DB_URL"' in text
+    assert "--single-transaction" in text and "ON_ERROR_STOP=1" in text
+    assert 'echo "$SUPABASE_DB_URL' not in text
+
+
+def test_no_workflow_runs_untrusted_pr_code_with_secrets():
+    for path in WORKFLOWS.glob("*.yml"):
+        assert "pull_request_target" not in path.read_text(), path.name

@@ -1,0 +1,46 @@
+# Supabase 표 구조(supabase/schema.sql)를 데이터베이스에 적용한다. 설정 방법은 docs/SETUP.md 1-1.
+#
+# main에 schema.sql이 바뀌어 올라왔을 때(PR 머지)와 손으로 실행할 때만 돈다. PR(포크 포함)에서는 돌지 않는다.
+# schema.sql은 여러 번 실행해도 안전하게 짜여 있고, 한 트랜잭션으로 돌려서 중간에 실패하면 아무것도 바뀌지 않는다.
+# 데이터베이스 접속 주소(비밀번호 포함)는 Secret SUPABASE_DB_URL에만 두고 로그에 찍지 않는다.
+name: db-schema
+
+on:
+  push:
+    branches: [main]
+    paths: [supabase/schema.sql]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: db-schema
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    # 이 저장소에서만(포크에서는 돌지 않는다), main 코드로만
+    if: github.repository == 'parksh089g/Stocktrade' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: 접속 주소 확인
+        id: check
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            echo "::warning::Secret SUPABASE_DB_URL이 없어 schema.sql을 적용하지 않았습니다. SETUP 1-1을 보고 넣은 뒤 이 워크플로를 손으로 실행하세요."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: schema.sql 적용
+        if: steps.check.outputs.ready == 'true'
+        run: psql "$SUPABASE_DB_URL" --no-psqlrc -v ON_ERROR_STOP=1 --single-transaction --quiet -f supabase/schema.sql

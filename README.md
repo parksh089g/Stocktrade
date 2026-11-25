@@ -56,7 +56,7 @@ uv run python -m trading.engine --market KR --ignore-hours --dry-run --stop-loss
 
 ## 기록과 알림
 
-- 기록: Supabase(`supabase/schema.sql`). 모의투자/실전 기록은 따로 저장된다. 연결 확인 `uv run python -m trading.storage.check`
+- 기록: Supabase(`supabase/schema.sql`, 바뀌면 main 머지 때 `db-schema` 워크플로가 적용). 모의투자/실전 기록은 따로 저장된다. 연결 확인 `uv run python -m trading.storage.check`
 - 알림: 웹앱 푸시. 키 만들기 `uv run python -m trading.notify.vapid`, 폰으로 시험 알림 `uv run python -m trading.notify.check`.
   알림을 한 기기에도 못 보내면 실행이 실패로 끝나 GitHub Actions 실패 메일이 백업 알림이 된다.
 - fake 증권사로 실행할 때는 가짜 주문이 실제 기록에 섞이지 않도록 메모리 저장소와 화면 출력만 쓴다.
