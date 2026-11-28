@@ -84,7 +84,7 @@ npm ci
 npm run demo     # 키 없이 데모 데이터로 화면 보기
 npm run dev      # 실제 기록(webapp/.env.local 필요)
 npm test         # 계산 시험, npm run typecheck로 타입 검사
-npm run deploy   # Cloudflare Pages에 올리기
+npm run deploy   # Cloudflare Pages에 올리기(Cloudflare에 GitHub를 연결하면 main 머지 때 자동으로 올라간다, SETUP 6-4)
 ```
 
 ## 증권사(KIS) 연결

@@ -209,3 +209,38 @@ def test_db_schema_runs_only_on_main_of_this_repo():
 def test_no_workflow_runs_untrusted_pr_code_with_secrets():
     for path in WORKFLOWS.glob("*.yml"):
         assert "pull_request_target" not in path.read_text(), path.name
+
+
+# ---- 웹 푸시 공개키 확인(vapid-public-key.yml) ----
+
+
+def test_vapid_public_key_runs_only_by_hand_on_main():
+    text = read("vapid-public-key.yml")
+    trigger = text.split("\non:\n", 1)[1].split("\npermissions:", 1)[0]
+    assert trigger.strip() == "workflow_dispatch:"
+    assert (
+        "if: github.repository == 'parksh089g/Stocktrade' && github.ref == 'refs/heads/main'\n"
+        in text
+    )
+    # 개인키는 공개키 계산에만 쓰고 찍지 않는다
+    assert re.findall(r"secrets\.\w+", text) == ["secrets.VAPID_PRIVATE_KEY"]
+    assert 'echo "$ENGINE_VAPID_PRIVATE_KEY' not in text
+    assert "ENGINE_VAPID_PRIVATE_KEY=" not in text
+
+
+def test_vapid_public_key_matches_engine():
+    """워크플로의 node 계산이 엔진(trading.notify.vapid)과 같은 공개키를 내는지."""
+    import os
+    import shutil
+    import subprocess
+
+    from trading.notify.vapid import generate_private_key, public_key_from_private
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node 없음")
+    script = re.search(r"node -e '(.+?)'\)", read("vapid-public-key.yml")).group(1)
+    private = generate_private_key()
+    env = {**os.environ, "ENGINE_VAPID_PRIVATE_KEY": private}
+    out = subprocess.run([node, "-e", script], env=env, capture_output=True, text=True, check=True)
+    assert out.stdout.strip() == public_key_from_private(private)

@@ -282,7 +282,7 @@ Worker는 인터넷 주소 없이 예약으로만 돈다. 실행 시각들의 '�
 |---|---|
 | `VITE_SUPABASE_URL` | 1장의 Project URL (`https://xxxx.supabase.co`) |
 | `VITE_SUPABASE_PUBLISHABLE_KEY` | Project Settings > API Keys의 publishable 키 (`sb_publishable_...`) |
-| `VITE_VAPID_PUBLIC_KEY` | `uv run python -m trading.notify.vapid`가 보여 주는 공개키(2장) |
+| `VITE_VAPID_PUBLIC_KEY` | `uv run python -m trading.notify.vapid`가 보여 주는 공개키(2장). PC 없이는 Actions의 `vapid-public-key` 워크플로 |
 
 secret 키(`sb_secret_...`)를 잘못 넣으면 웹앱이 실행을 거부한다. 웹 푸시 개인키는 저장소 루트 `.env`에만 둔다.
 
@@ -316,6 +316,20 @@ npm test       # 계산(비중, 성적, 시간 표기) 시험
    ```
 3. 주소는 `https://stocktrade.pages.dev`다(같은 이름이 이미 있으면 올릴 때 나오는 주소를 쓴다).
    웹앱을 고치면 다시 `npm run deploy`.
+
+#### 자동으로 올리기 (Cloudflare에서 GitHub 연결, 권장)
+
+PC 없이, main에 머지될 때마다 Cloudflare가 빌드해서 올린다. 토큰이나 GitHub 설정은 필요 없다.
+위의 1~2단계(PC에서 `npm run deploy`) 대신 쓴다.
+
+1. Cloudflare **Workers & Pages > Create > Pages > Connect to Git**에서 이 저장소를 고른다.
+2. 빌드 설정: Production branch `main`, Root directory `webapp`, Build command `npm run build`,
+   Build output directory `dist`.
+3. **Environment variables**: `NODE_VERSION`=`22`와 6-2 표의 세 값. 모두 공개용 값이다.
+   `VITE_VAPID_PUBLIC_KEY`를 모르면 GitHub **Actions > vapid-public-key > Run workflow**를 돌린다.
+   Secret `VAPID_PRIVATE_KEY`에서 짝이 맞는 공개키를 계산해 실행 결과 화면에 보여 준다.
+   비워 두면 웹앱은 뜨지만 알림 켜기만 동작하지 않는다.
+4. 값을 바꾸면 Cloudflare의 **Deployments**에서 마지막 배포를 **Retry deployment**해야 반영된다.
 
 ### 6-5. 폰에 설치하고 알림 켜기 (안드로이드 크롬)
 
