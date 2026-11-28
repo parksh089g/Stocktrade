@@ -126,6 +126,14 @@ create table if not exists public.engine_settings (
 );
 insert into public.engine_settings (id) values (1) on conflict (id) do nothing;
 
+-- 웹 푸시 공개키(행 하나). 웹앱 설정 화면에서 키를 만들면 set_push_key()가 개인키(Vault)와 함께 넣는다.
+-- 공개키는 공개용 값이다. 웹앱이 알림 구독에 쓴다
+create table if not exists public.push_key (
+  id smallint primary key default 1 check (id = 1),
+  public_key text not null check (public_key ~ '^[A-Za-z0-9_-]{87}$'),
+  created_at timestamptz not null default now()
+);
+
 -- 웹앱을 쓸 수 있는 사람. 웹앱에서 처음 가입한 뒤 대시보드에서 직접 한 줄 넣는다
 create table if not exists public.owners (
   user_id uuid primary key references auth.users (id) on delete cascade
@@ -169,6 +177,7 @@ alter table public.push_subscriptions enable row level security;
 alter table public.owners enable row level security;  -- 정책 없음: 웹앱에서는 볼 수 없다
 alter table public.engine_cache enable row level security;  -- 정책 없음: 웹앱에서는 볼 수 없다
 alter table public.engine_settings enable row level security;
+alter table public.push_key enable row level security;  -- 읽기만, 넣기는 set_push_key()로만
 
 drop policy if exists "owner read" on public.trading_switch;
 create policy "owner read" on public.trading_switch
@@ -201,6 +210,10 @@ create policy "owner read" on public.engine_settings
 drop policy if exists "owner update" on public.engine_settings;
 create policy "owner update" on public.engine_settings
   for update to authenticated using (public.is_owner()) with check (public.is_owner());
+
+drop policy if exists "owner read" on public.push_key;
+create policy "owner read" on public.push_key
+  for select to authenticated using (public.is_owner());
 
 -- ---------------------------------------------------------------- 엔진 비밀값(Supabase Vault)
 -- 웹앱에서 넣는 API 키(LLM, DART). Vault가 암호화해서 저장한다.
@@ -258,19 +271,48 @@ begin
 end
 $$;
 
+-- 웹 푸시 키 한 쌍을 넣는다(웹앱이 폰 브라우저에서 만든다). 개인키는 Vault에, 공개키는 push_key 표에.
+-- 짝이 어긋나지 않게 둘을 한 번에 넣고, 이미 있으면 바꾸지 않는다(바꾸면 켜 둔 기기의 알림이 끊긴다).
+-- set_engine_secret()으로는 개인키만 따로 넣거나 바꿀 수 없다(engine_secret_names에 없다).
+create or replace function public.set_push_key(private_key text, public_key text)
+returns void
+language plpgsql security definer set search_path = ''
+as $$
+begin
+  if not public.is_owner() then
+    raise exception 'not allowed' using errcode = '42501';
+  end if;
+  if coalesce(private_key, '') !~ '^[A-Za-z0-9_-]{43}$'
+     or coalesce(public_key, '') !~ '^[A-Za-z0-9_-]{87}$' then
+    raise exception 'invalid push key' using errcode = '22023';
+  end if;
+  if exists (select 1 from public.push_key)
+     or exists (select 1 from vault.secrets where name = 'stocktrade_vapid_private_key') then
+    raise exception 'push key exists' using errcode = '23505';
+  end if;
+  perform vault.create_secret(private_key, 'stocktrade_vapid_private_key', 'stocktrade 웹 푸시 개인키(웹앱에서 만듦)');
+  insert into public.push_key (id, public_key) values (1, public_key);
+end
+$$;
+
+-- 엔진이 쓰는 비밀값: 웹앱에서 넣은 API 키와 웹 푸시 개인키
 create or replace function public.get_engine_secrets()
 returns table (name text, value text)
 language sql security definer set search_path = ''
 as $$
   select substr(d.name, length('stocktrade_') + 1), d.decrypted_secret
   from vault.decrypted_secrets d
-  where d.name in (select 'stocktrade_' || n from unnest(public.engine_secret_names()) n)
+  where d.name in (
+    select 'stocktrade_' || n from unnest(public.engine_secret_names() || array['vapid_private_key']) n
+  )
 $$;
 
 -- 함수는 기본으로 누구나 부를 수 있어서 막고 필요한 쪽에만 연다
 revoke all on function public.set_engine_secret(text, text) from public, anon;
 revoke all on function public.engine_secret_status() from public, anon;
 revoke all on function public.get_engine_secrets() from public, anon, authenticated;
+revoke all on function public.set_push_key(text, text) from public, anon;
+grant execute on function public.set_push_key(text, text) to authenticated;
 grant execute on function public.set_engine_secret(text, text) to authenticated;
 grant execute on function public.engine_secret_status() to authenticated;
 grant execute on function public.get_engine_secrets() to service_role;

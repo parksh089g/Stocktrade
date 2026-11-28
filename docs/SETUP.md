@@ -54,6 +54,9 @@
 
 ## 2. 웹 푸시 키 (알림)
 
+PC가 없으면 이 장을 건너뛰고 6-5의 **알림 키 만들고 알림 켜기**를 쓴다(폰 브라우저에서 만들어 Vault에 넣는다).
+이 장(PC에서 만들기)과 웹앱에서 만들기 중 하나만 쓴다.
+
 1. 키를 만든다. 개인키는 화면에 보이지 않고 `.env`에 바로 들어간다.
 
    ```bash
@@ -282,7 +285,7 @@ Worker는 인터넷 주소 없이 예약으로만 돈다. 실행 시각들의 '�
 |---|---|
 | `VITE_SUPABASE_URL` | 1장의 Project URL (`https://xxxx.supabase.co`) |
 | `VITE_SUPABASE_PUBLISHABLE_KEY` | Project Settings > API Keys의 publishable 키 (`sb_publishable_...`) |
-| `VITE_VAPID_PUBLIC_KEY` | `uv run python -m trading.notify.vapid`가 보여 주는 공개키(2장). PC 없이는 Actions의 `vapid-public-key` 워크플로 |
+| `VITE_VAPID_PUBLIC_KEY` | (선택) `uv run python -m trading.notify.vapid`가 보여 주는 공개키(2장). 비우면 6-5에서 웹앱이 키를 만든다 |
 
 secret 키(`sb_secret_...`)를 잘못 넣으면 웹앱이 실행을 거부한다. 웹 푸시 개인키는 저장소 루트 `.env`에만 둔다.
 
@@ -325,10 +328,10 @@ PC 없이, main에 머지될 때마다 Cloudflare가 빌드해서 올린다. 토
 1. Cloudflare **Workers & Pages > Create > Pages > Connect to Git**에서 이 저장소를 고른다.
 2. 빌드 설정: Production branch `main`, Root directory `webapp`, Build command `npm run build`,
    Build output directory `dist`.
-3. **Environment variables**: `NODE_VERSION`=`22`와 6-2 표의 세 값. 모두 공개용 값이다.
-   `VITE_VAPID_PUBLIC_KEY`를 모르면 GitHub **Actions > vapid-public-key > Run workflow**를 돌린다.
-   Secret `VAPID_PRIVATE_KEY`에서 짝이 맞는 공개키를 계산해 실행 결과 화면에 보여 준다.
-   비워 두면 웹앱은 뜨지만 알림 켜기만 동작하지 않는다.
+3. **Environment variables**: `NODE_VERSION`=`22`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`(6-2 표).
+   모두 공개용 값이다. `VITE_VAPID_PUBLIC_KEY`는 2장에서 PC로 키를 만들었을 때만 넣는다.
+   비워 두면 6-5에서 웹앱이 키를 만든다. 공개키를 모르면 GitHub **Actions > vapid-public-key > Run workflow**가
+   Secret `VAPID_PRIVATE_KEY`에서 짝이 맞는 공개키를 계산해 보여 준다.
 4. 값을 바꾸면 Cloudflare의 **Deployments**에서 마지막 배포를 **Retry deployment**해야 반영된다.
 
 ### 6-5. 폰에 설치하고 알림 켜기 (안드로이드 크롬)
@@ -336,6 +339,12 @@ PC 없이, main에 머지될 때마다 Cloudflare가 빌드해서 올린다. 토
 1. 폰 크롬에서 주소를 열고 메뉴(⋮) > **앱 설치**(또는 **홈 화면에 추가**).
 2. 설치한 앱을 열고 6-1의 이메일과 비밀번호로 로그인한다.
 3. 오른쪽 위 톱니(설정) > **이 기기 알림** > **알림 켜기** > 허용.
+   - 알림 키가 없으면(2장을 건너뛰었으면) 버튼이 **알림 키 만들고 알림 켜기**로 나온다. 누르면 폰 브라우저가
+     키 한 쌍을 만들어 개인키는 Supabase Vault에, 공개키는 `push_key` 표에 넣고 바로 알림을 켠다.
+     개인키는 화면, 채팅, 로그에 나오지 않고, 엔진만 꺼내 쓴다. GitHub Secrets에 넣을 것도 없다.
+     키는 한 번만 만들 수 있다(바꾸면 켜 둔 기기의 알림이 끊긴다). 다른 기기는 **알림 켜기**만 누르면 된다.
+   - 이때 GitHub Secrets에 `VAPID_PRIVATE_KEY`를 따로 넣지 않는다. 넣으면 그 값이 먼저라 알림이 가지 않고,
+     실행 로그에 경고가 남는다.
 4. 이 PC에서 시험 알림을 보낸다. 루트 `.env`에 `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`,
    `VAPID_SUBJECT=mailto:본인메일주소`가 있어야 한다.
 
@@ -345,7 +354,8 @@ PC 없이, main에 머지될 때마다 Cloudflare가 빌드해서 올린다. 토
 
    폰에 "[시험] 푸시 알림 확인"이 오고, 누르면 앱이 열리면 된다. 안 오면 폰 **설정 > 애플리케이션 >
    (설치한 앱 또는 Chrome) > 알림**이 허용인지, 배터리 절전 예외인지 본다. 앱 설정에서 알림을 껐다 켜도 된다.
-5. GitHub Secrets에 `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`를 넣는다(4-1 표, 값은 루트 `.env`).
+5. (2장에서 PC로 키를 만든 경우) GitHub Secrets에 `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`를 넣는다(4-1 표, 값은 루트 `.env`).
+   웹앱에서 키를 만들었으면 이 단계와 4번은 건너뛴다.
    다음 실행부터 엔진이 폰으로 알림을 보낸다. 알림을 한 기기에도 못 보내면 실행이 실패로 끝나
    GitHub 메일이 온다.
 

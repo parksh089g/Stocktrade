@@ -12,7 +12,7 @@ import {
   settingsProblems,
 } from "../lib/engine";
 import { formatKst } from "../lib/format";
-import { disablePush, enablePush, pushState, type PushState } from "../lib/push";
+import { disablePush, enablePush, generatePushKeyPair, pushState, type PushState } from "../lib/push";
 import type { EngineSettings, EngineSettingsInput, Mode, SecretName, SecretStatus } from "../lib/types";
 
 function PauseCard() {
@@ -357,7 +357,7 @@ function AiCard() {
 
 const PUSH_TEXT: Record<PushState, string> = {
   unsupported: "이 브라우저는 웹 푸시를 지원하지 않습니다. 안드로이드 크롬에서 앱을 설치해 쓰세요.",
-  "no-key": "웹 푸시 공개키가 빌드에 없습니다(VITE_VAPID_PUBLIC_KEY).",
+  "no-key": "알림 키가 아직 없습니다. 한 번 만들면 엔진이 같은 키로 알림을 보냅니다. 개인키는 Supabase Vault에 암호화해 두고 화면에는 나오지 않습니다.",
   denied: "알림이 차단돼 있습니다. 크롬 메뉴 → 설정 → 사이트 설정 → 알림에서 이 앱을 허용한 뒤 다시 켜세요.",
   off: "꺼짐. 켜면 실행이 끝날 때마다 이 기기로 알림이 옵니다.",
   on: "켜짐. 실행이 끝나면 이 기기로 알림이 옵니다.",
@@ -368,21 +368,44 @@ function PushCard() {
   const [state, setState] = useState<PushState | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [storedKey, setStoredKey] = useState<string | null>(null);
 
-  const refresh = () =>
-    pushState().then(setState, (err: Error) => {
+  const refresh = async () => {
+    try {
+      const key = source.demo ? null : await source.getPushKey();
+      setStoredKey(key);
+      setState(await pushState(key));
+    } catch (err) {
       setState("unsupported");
-      setError(err.message);
-    });
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
   useEffect(() => {
     refresh();
   }, []);
+
+  /** 키를 만들어 넣고 바로 이 기기 알림을 켠다 */
+  const createKey = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const pair = await generatePushKeyPair();
+      await source.createPushKey(pair.privateKey, pair.publicKey);
+      setStoredKey(pair.publicKey);
+      await enablePush(source, pair.publicKey);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+      refresh();
+    }
+  };
 
   const toggle = async (on: boolean) => {
     setBusy(true);
     setError("");
     try {
-      if (on) await enablePush(source);
+      if (on) await enablePush(source, storedKey);
       else await disablePush(source);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -406,6 +429,11 @@ function PushCard() {
             <p class="error-text" role="alert">
               {error}
             </p>
+          )}
+          {state === "no-key" && (
+            <button class="btn primary block" onClick={createKey} disabled={busy}>
+              {busy ? "만드는 중…" : "알림 키 만들고 알림 켜기"}
+            </button>
           )}
           {state === "off" && (
             <button class="btn primary block" onClick={() => toggle(true)} disabled={busy}>

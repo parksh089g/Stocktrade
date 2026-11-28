@@ -64,6 +64,11 @@ export interface DataSource {
   /** 비밀값 넣기. 빈 문자열이면 지운다 */
   setSecret(name: SecretName, value: string): Promise<void>;
 
+  /** 웹앱에서 만든 웹 푸시 공개키. 없으면 null */
+  getPushKey(): Promise<string | null>;
+  /** 웹 푸시 키 한 쌍을 넣는다(개인키는 Vault로). 이미 있으면 실패한다 */
+  createPushKey(privateKey: string, publicKey: string): Promise<void>;
+
   savePushSubscription(keys: PushKeys): Promise<void>;
   deletePushSubscription(endpoint: string): Promise<void>;
 }

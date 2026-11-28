@@ -21,7 +21,7 @@ from trading.llm.edgar import EdgarSource
 from trading.llm.screen import BuyScreener, DisclosureSource
 from trading.notify.base import ConsoleNotifier, MultiNotifier, Notifier
 from trading.notify.webpush import WebPushNotifier
-from trading.storage.base import Store
+from trading.storage.base import EngineConfig, Store
 from trading.storage.memory import MemoryStore
 from trading.storage.supabase import SupabaseStore
 from trading.universe import BENCHMARKS, Universe
@@ -157,11 +157,11 @@ def build_screener(settings: Settings, llm: LLMClient | None) -> BuyScreener | N
 
 # 웹앱 설정 화면에서 넣을 수 있는 값(engine_settings 칸 → Settings 이름). 비밀값은 Vault에 있다.
 STORE_SETTINGS = ("llm_provider", "llm_model", "llm_summary", "llm_screen", "sec_user_agent")
-STORE_SECRETS = ("llm_api_key", "dart_api_key")
+STORE_SECRETS = ("llm_api_key", "dart_api_key", "vapid_private_key")
 
 
 def with_store_config(settings: Settings, store: Store | None = None) -> Settings:
-    """GitHub(환경변수, .env)에 없는 LLM 설정을 웹앱에서 넣은 값으로 채운다.
+    """GitHub(환경변수, .env)에 없는 LLM 설정과 웹 푸시 키를 웹앱에서 넣은 값으로 채운다.
 
     GitHub에 값이 있으면 그것이 먼저다. 읽지 못하면 로그만 남기고 그대로 돌려준다
     (LLM 기능만 꺼질 뿐 매매는 멈추지 않는다).
@@ -177,9 +177,13 @@ def with_store_config(settings: Settings, store: Store | None = None) -> Setting
     try:
         config = store.get_engine_config()
     except Exception as e:
-        logger.warning("웹앱 엔진 설정을 읽지 못했습니다(LLM 기능에만 영향): %s", type(e).__name__)
+        logger.warning(
+            "웹앱 엔진 설정을 읽지 못했습니다(LLM 기능과 웹앱에서 만든 알림 키에만 영향): %s",
+            type(e).__name__,
+        )
         return settings
     given = settings.model_fields_set
+    _warn_two_push_keys(settings, config)
     update: dict = {}
     for name in STORE_SETTINGS:
         value = config.settings.get(name)
@@ -193,3 +197,16 @@ def with_store_config(settings: Settings, store: Store | None = None) -> Setting
         return settings
     logger.info("웹앱에서 넣은 설정을 씁니다: %s", ", ".join(sorted(update)))
     return settings.model_copy(update=update)
+
+
+def _warn_two_push_keys(settings: Settings, config: EngineConfig) -> None:
+    """GitHub와 웹앱에 서로 다른 웹 푸시 개인키가 있으면 알린다(GitHub 값을 쓴다)."""
+    web = config.secrets.get("vapid_private_key", "").strip()
+    if not web or settings.vapid_private_key is None:
+        return
+    if settings.vapid_private_key.get_secret_value().strip() != web:
+        logger.warning(
+            "웹 푸시 개인키가 GitHub Secrets와 웹앱에 다르게 들어 있어 GitHub 값을 씁니다. "
+            "웹앱에서 만든 키로 알림을 켠 기기에는 알림이 가지 않으니 "
+            "GitHub의 VAPID_PRIVATE_KEY를 지우세요."
+        )

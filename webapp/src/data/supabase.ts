@@ -125,6 +125,20 @@ export function createSupabaseSource(url: string, key: string): DataSource {
       if (error) throw new DataError(/invalid secret/.test(error.message) ? "키 형식이 맞지 않습니다" : error.message);
     },
 
+    async getPushKey() {
+      const result = await db.from("push_key").select("public_key").eq("id", 1).maybeSingle();
+      // 표가 아직 없으면(schema.sql을 다시 실행하기 전) 키가 없는 것으로 본다
+      if (result.error && /push_key/.test(result.error.message)) return null;
+      return one<{ public_key: string }>(result)?.public_key ?? null;
+    },
+    async createPushKey(privateKey, publicKey) {
+      const { error } = await db.rpc("set_push_key", { private_key: privateKey, public_key: publicKey });
+      if (!error) return;
+      if (/push key exists/.test(error.message)) throw new DataError("알림 키가 이미 있습니다. 화면을 새로 고쳐 주세요");
+      if (/not allowed/.test(error.message)) throw new DataError("알림 키를 만들 권한이 없습니다(소유자 등록을 확인하세요)");
+      throw new DataError(error.message);
+    },
+
     async latestMode() {
       const row = one<{ mode: Mode }>(
         await db.from("runs").select("mode").order("started_at", { ascending: false }).limit(1).maybeSingle(),

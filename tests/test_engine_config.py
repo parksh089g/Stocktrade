@@ -102,3 +102,43 @@ def test_supabase_reads_settings_row_and_vault():
 
     s = with_store_config(settings(), store)
     assert (s.llm_model, s.llm_summary) == ("claude-haiku-5-5", False)
+
+
+# ---- 웹앱에서 만든 웹 푸시 키 ----
+
+
+def push_store(private_key: str) -> SupabaseStore:
+    pg = FakePostgrest()
+    pg.vault = {"vapid_private_key": private_key}
+    return SupabaseStore(
+        "https://x.supabase.co", pg.key, "paper", transport=httpx.MockTransport(pg.handle)
+    )
+
+
+def test_web_push_key_turns_on_web_push():
+    from trading.engine.factory import build_notifier
+    from trading.notify.base import ConsoleNotifier
+    from trading.notify.vapid import generate_private_key
+    from trading.notify.webpush import WebPushNotifier
+
+    key = generate_private_key()
+    store = push_store(key)
+    s = with_store_config(settings(), store)
+    assert s.vapid_private_key is not None and s.vapid_private_key.get_secret_value() == key
+    assert key in s.secret_values()  # 로그에서 가린다
+    notifier = build_notifier(s, store)
+    assert [type(n) for n in notifier.notifiers] == [ConsoleNotifier, WebPushNotifier]
+
+
+def test_github_push_key_wins_and_warns_when_different(caplog):
+    from trading.notify.vapid import generate_private_key
+
+    github, web = generate_private_key(), generate_private_key()
+    s = with_store_config(settings(vapid_private_key=github), push_store(web))
+    assert s.vapid_private_key is not None and s.vapid_private_key.get_secret_value() == github
+    assert "VAPID_PRIVATE_KEY를 지우세요" in caplog.text
+    assert github not in caplog.text and web not in caplog.text
+
+    caplog.clear()
+    with_store_config(settings(vapid_private_key=web), push_store(web))
+    assert "다르게" not in caplog.text

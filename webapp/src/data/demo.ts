@@ -448,6 +448,8 @@ export function createDemoSource(now: Date = new Date()): DataSource {
           .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at)),
       ),
 
+    getPushKey: () => wait(null),
+    createPushKey: () => wait(undefined),
     savePushSubscription: () => wait(undefined),
     deletePushSubscription: () => wait(undefined),
   };
