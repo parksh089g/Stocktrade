@@ -1,0 +1,36 @@
+# 웹앱에 넣을 웹 푸시 공개키(VITE_VAPID_PUBLIC_KEY)를 보여 준다. PC 없이 확인할 때 쓴다(docs/SETUP.md 6-2).
+#
+# 손으로 실행할 때만 돈다. Secret VAPID_PRIVATE_KEY에서 짝이 맞는 공개키를 계산해 로그에 찍는다.
+# 공개키는 웹앱에 실리는 공개용 값이라 알려져도 괜찮다. 개인키 자체는 로그에 찍지 않는다.
+# 모의투자와 실전이 같은 키를 쓰므로 한 번만 확인하면 된다.
+name: vapid-public-key
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  show:
+    # 이 저장소에서만(포크에서는 돌지 않는다)
+    if: github.repository == 'parksh089g/Stocktrade' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    env:
+      ENGINE_VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+    steps:
+      - name: 공개키 계산
+        run: |
+          if [ -z "$ENGINE_VAPID_PRIVATE_KEY" ]; then
+            echo "::error::Secret VAPID_PRIVATE_KEY가 없습니다. SETUP 2장을 보고 키를 만든 뒤 넣으세요."
+            exit 1
+          fi
+          # 개인키(base64url 32바이트)에서 P-256 공개키(압축 안 한 65바이트, base64url)를 계산한다
+          public=$(node -e 'const c=require("node:crypto");const e=c.createECDH("prime256v1");e.setPrivateKey(Buffer.from(process.env.ENGINE_VAPID_PRIVATE_KEY,"base64url"));console.log(e.getPublicKey().toString("base64url"))')
+          echo "VITE_VAPID_PUBLIC_KEY=$public"
+          echo "### 웹 푸시 공개키" >> "$GITHUB_STEP_SUMMARY"
+          echo "Cloudflare Pages 환경변수 \`VITE_VAPID_PUBLIC_KEY\`에 넣으세요." >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "$public" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"

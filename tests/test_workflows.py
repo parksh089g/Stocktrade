@@ -211,41 +211,24 @@ def test_no_workflow_runs_untrusted_pr_code_with_secrets():
         assert "pull_request_target" not in path.read_text(), path.name
 
 
-# ---- 웹앱 자동 배포(webapp-deploy.yml) ----
+# ---- 웹 푸시 공개키 확인(vapid-public-key.yml) ----
 
 
-def test_webapp_deploy_runs_only_on_main_of_this_repo():
-    text = read("webapp-deploy.yml")
+def test_vapid_public_key_runs_only_by_hand_on_main():
+    text = read("vapid-public-key.yml")
     trigger = text.split("\non:\n", 1)[1].split("\npermissions:", 1)[0]
-    # PR(포크 포함)에서는 돌지 않는다: Cloudflare 토큰 Secret을 쓰기 때문
-    assert "pull_request" not in trigger
-    assert "    branches: [main]\n" in trigger and "      - webapp/**\n" in trigger
-    assert "workflow_dispatch" in trigger
+    assert trigger.strip() == "workflow_dispatch:"
     assert (
         "if: github.repository == 'parksh089g/Stocktrade' && github.ref == 'refs/heads/main'\n"
         in text
     )
+    # 개인키는 공개키 계산에만 쓰고 찍지 않는다
+    assert re.findall(r"secrets\.\w+", text) == ["secrets.VAPID_PRIVATE_KEY"]
+    assert 'echo "$ENGINE_VAPID_PRIVATE_KEY' not in text
+    assert "ENGINE_VAPID_PRIVATE_KEY=" not in text
 
 
-def test_webapp_deploy_builds_only_with_public_values():
-    text = read("webapp-deploy.yml")
-    # 웹앱 빌드에 들어가는 값은 공개용 Variables뿐이고, Secret은 Cloudflare 토큰 하나다
-    for line in re.findall(r"VITE_\w+: \$\{\{ (.+?) \}\}", text):
-        assert line.startswith("vars."), line
-    assert sorted(set(re.findall(r"secrets\.\w+", text))) == [
-        "secrets.CLOUDFLARE_API_TOKEN",
-        "secrets.SUPABASE_URL",
-        "secrets.VAPID_PRIVATE_KEY",
-    ]
-    assert "sb_publishable_*" in text
-    for name in ("CLOUDFLARE_API_TOKEN", "ENGINE_VAPID_PRIVATE_KEY"):
-        assert f'echo "${name}' not in text
-        assert f"{name}=" not in text  # GITHUB_ENV로 넘기지 않는다
-    # 개인키는 공개키를 계산하는 데만 쓰고 웹앱 빌드 값으로 넘기지 않는다
-    assert "VITE_VAPID_PUBLIC_KEY=$public" in text
-
-
-def test_webapp_deploy_derives_matching_vapid_public_key():
+def test_vapid_public_key_matches_engine():
     """워크플로의 node 계산이 엔진(trading.notify.vapid)과 같은 공개키를 내는지."""
     import os
     import shutil
@@ -256,7 +239,7 @@ def test_webapp_deploy_derives_matching_vapid_public_key():
     node = shutil.which("node")
     if node is None:
         pytest.skip("node 없음")
-    script = re.search(r"node -e '(.+?)'\)", read("webapp-deploy.yml")).group(1)
+    script = re.search(r"node -e '(.+?)'\)", read("vapid-public-key.yml")).group(1)
     private = generate_private_key()
     env = {**os.environ, "ENGINE_VAPID_PRIVATE_KEY": private}
     out = subprocess.run([node, "-e", script], env=env, capture_output=True, text=True, check=True)
